@@ -1,0 +1,151 @@
+front end:
+
+npm start
+npx react-native run-android
+
+to reset the metro:
+
+# Clear Metro cache
+npx react-native start --reset-cache
+
+seerver:
+
+npm run dev
+ngrok http http://localhost:8080
+
+
+web:
+npm run dev
+ngrok http http://localhost:5173/
+
+to set up ngrok:
+1.create an account
+2.go to 
+https://dashboard.ngrok.com/get-started/setup/windows
+3. download ngrok exe file
+4. paste the file in any path folder 
+5. run the authentication key in terminal
+6. ngrok http http://localhost:8080
+
+dummy credentials:
+"student_id"	"student_pass" "semester_no"	"college_code"	"dept_code"	"total_classes"	"classes_attended"	"classes_absent" "percentage"
+"2111CS130151"	  "12345678"	    7	          "GITAM"	        "CS"	    1000	           482	              518	        48.20
+"2211CS040131"	  "12345678"	    7	           "MRU"	        "CSE"	    1000	           485	              515	        48.50
+"2111ME080111"	  "12345678"	    7	          "CMRTC"	        "ME"	    1000	           484	              516	        48.40
+"2211CS040132"	  "12345678"	    7	           "MRU"	        "CSE"	    1000	           522	              478	        52.20
+"2211CS070133"	  "12345678"	    5	          "CMRTC"	        "CSE"	    1000	           484	              516	        48.40
+"2211CV140161"	  "12345678"	    5	          "GITAM"	        "CIV"	    1000	           505	              495	        50.50
+"2211EC050101"	  "12345678"	    5	          "MRU" 	        "ECE"	    1000	           521	              479	        52.10
+"2211EE100101"	  "12345678"	    5	          "JNTU"	        "EEE"	    1000	           495	              505	        49.50
+"2211IO120141"	  "12345678"	    5	          "VNR"	            "IOT"	    1000	           492	              508	        49.20
+"2311AI060121"	  "12345678"	    3	          "MRU"	            "AIML"	    1000	           509	              491	        50.90
+"2311DS110131"	  "12345678"	    3	          "VNR"	            "DS"	    1000	           505	              495	        50.50
+"2311IT090122"	  "c9c3d009"	    3	          "JNTU"	        "IT"	    1000	           491	              509	        49.10
+                    
+
+async storage preset data fields:
+{
+    student_name : "Aarav Sharma",
+    student_gmail : "aarav.sharma@gmail.com",
+    student_id : "2211CS040131",
+    student_college_code : "MRU",
+    student_college_name : "Malla Reddy University",
+    student_department_code : "CSE",
+    student_department_name : "Computer Science and Engineering",
+    student_section_code : "A",
+    student_batch_year : 2021,
+    student_section_name : "CSE 2021 Section A",
+    total_classes : "1",
+    present_classes : "1",
+    absent_classes : "0",
+    student_attendence_percentage : "100.00",
+    student_attendence_absent_percentage : "0.00",
+    student_attendence_percentage_today : "0"
+}
+
+
+SELECT 
+    s.id AS subject_id,
+    s.subject_code,
+    s.name AS subject_name,
+    fs.faculty_id,
+    f.faculty_name AS faculty_name
+FROM 
+    students st
+JOIN 
+    faculty_subjects fs ON st.section_id = fs.section_id
+JOIN 
+    subjects s ON fs.subject_id = s.id
+JOIN 
+    faculties f ON fs.faculty_id = f.id
+WHERE 
+    st.id = '2211CS040131'
+	  AND s.semester_no = st.semester_no;
+
+
+mailer bypass:
+tls: {
+    rejectUnauthorized: false, // <- THIS FIXES THE SELF-SIGNED CERT ERROR
+  },
+
+
+pro developer tips:
+                    If you only want to remove the data from the attendance_records table (not drop the table itself), replace:
+
+                    sql
+                    Copy
+                    Edit
+                    DROP TABLE IF EXISTS attendance_records;
+                    with:
+
+                    sql
+                    Copy
+                    Edit
+                    DELETE FROM attendance_records;
+                    This will remove all rows from the table but retain the table structure, schema, and any relationships.
+
+                    If you also want to reset the auto-increment ID (if your table has one), use:
+
+                    sql
+                    Copy
+                    Edit
+                    TRUNCATE TABLE attendance_records RESTART IDENTITY;
+                    Let me know if you want to keep some data based on conditions (e.g., delete only old records).
+
+
+
+drop everything:
+-- Drop indexes first
+DROP INDEX IF EXISTS idx_attendance_date;
+DROP INDEX IF EXISTS idx_timetable_subject;
+DROP INDEX IF EXISTS idx_timetable_faculty;
+DROP INDEX IF EXISTS idx_timetable_section;
+DROP INDEX IF EXISTS idx_students_section;
+
+-- Drop triggers
+DROP TRIGGER IF EXISTS trigger_uppercase_designation ON faculties;
+
+-- Drop functions
+DROP FUNCTION IF EXISTS uppercase_designation();
+
+-- Drop tables (order matters due to foreign key constraints)
+DROP TABLE IF EXISTS attendance_records;
+DROP TABLE IF EXISTS attendance_sessions;
+DROP TABLE IF EXISTS timetable_entries;
+DROP TABLE IF EXISTS periods;
+DROP TABLE IF EXISTS faculty_subjects;
+DROP TABLE IF EXISTS subjects;
+DROP TABLE IF EXISTS faculties;
+DROP TABLE IF EXISTS admins;
+DROP TABLE IF EXISTS students;
+DROP TABLE IF EXISTS sections;
+DROP TABLE IF EXISTS departments;
+DROP TABLE IF EXISTS colleges;
+
+-- Drop custom types
+DROP TYPE IF EXISTS timerange;
+DROP TYPE IF EXISTS attendance_status;
+DROP TYPE IF EXISTS weekday;
+
+-- Optionally, drop extensions (only if you're sure it's not used elsewhere)
+DROP EXTENSION IF EXISTS btree_gist;
