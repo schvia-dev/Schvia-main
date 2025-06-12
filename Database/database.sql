@@ -4,7 +4,7 @@ CREATE EXTENSION IF NOT EXISTS btree_gist;
 -- ENUM types
 CREATE TYPE weekday AS ENUM ('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday');
 CREATE TYPE attendance_status AS ENUM ('Present', 'Absent', 'Leave');
-CREATE TYPE admin_role AS ENUM ('college_admin', 'department_admin', 'class_admin');
+CREATE TYPE admin_role AS ENUM ('college', 'department', 'class');
 CREATE TYPE year_level AS ENUM ('1st', '2nd', '3rd', '4th');
 
 -- Colleges
@@ -56,8 +56,8 @@ CREATE TABLE admins (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   CHECK (
-    (role = 'college_admin' AND department_id IS NULL) OR
-    (role IN ('department_admin', 'class_admin') AND department_id IS NOT NULL)
+    (role = 'college' AND department_id IS NULL) OR
+    (role IN ('department', 'class') AND department_id IS NOT NULL)
   )
 );
 
