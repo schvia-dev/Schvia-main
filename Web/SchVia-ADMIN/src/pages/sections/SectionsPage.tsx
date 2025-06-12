@@ -3,10 +3,8 @@ import {
   PlusCircle,
   Download,
   Upload,
-  Users,
   Edit,
   Trash2,
-  BookOpen,
 } from 'lucide-react';
 import Table from '../../components/ui/Table';
 import Button from '../../components/ui/Button';
@@ -17,19 +15,17 @@ import SelectInput from '../../components/ui/SelectInput';
 import Badge from '../../components/ui/Badge';
 import Card from '../../components/ui/Card';
 import { useAuth } from '../../context/AuthContext';
-import { Section } from '../../types';
+import { Batch } from '../../types';
 import {
-  getSections,
-  addSection,
-  updateSection,
-  deleteSection,
-} from '../../constants/fetchSections';
-import {
+  getBatches,
+  addBatch,
+  updateBatch,
+  deleteBatch,
   fetchDepartmentOptions,
   fetchBatchYearOptions,
-} from '../../constants/fetchSectionsFilters';
+} from '../../constants/fetchBatches';
 
-const SectionsPage: React.FC = () => {
+const BatchesPage: React.FC = () => {
   const { user } = useAuth();
   const collegeId = user?.college_id;
   if (!collegeId) return null;
@@ -38,7 +34,7 @@ const SectionsPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDepartment, setSelectedDepartment] = useState('');
   const [selectedBatchYear, setSelectedBatchYear] = useState('');
-  const [sections, setSections] = useState<Section[]>([]);
+  const [batches, setBatches] = useState<Batch[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
   // Dynamic filter options
@@ -49,58 +45,56 @@ const SectionsPage: React.FC = () => {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-  const [selectedSection, setSelectedSection] = useState<Section | null>(null);
+  const [selectedBatch, setSelectedBatch] = useState<Batch | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const [formData, setFormData] = useState({
-    section_code: '',
+    batch_code: '',
     name: '',
     department_id: '',
     batch_year: '',
+    current_semester: '1',
   });
 
   // Role checks
-  const isCollegeAdmin = user?.role === 'college_admin';
-  const isDepartmentAdmin = user?.role === 'department_admin';
-  const isClassAdmin = user?.role === 'class_admin';
-  const isRestrictedAdmin = isClassAdmin; // Only class_admin is read-only
+  const isCollegeAdmin = user?.role === 'college';
+  const isDepartmentAdmin = user?.role === 'department';
+  const isClassAdmin = user?.role === 'class';
+  const isRestrictedAdmin = isClassAdmin; // Only class admin is read-only
   const canPerformCrud = isCollegeAdmin || isDepartmentAdmin;
 
   // Load department & batch filters
   useEffect(() => {
     if (isDepartmentAdmin || isClassAdmin) {
-      // For department/class admins, set department to their own department_id
       setDepartmentOptions([
         { value: String(user.department_id), label: user.department_name || 'My Department' },
       ]);
+      setSelectedDepartment(String(user.department_id));
       setFormData(prev => ({ ...prev, department_id: String(user.department_id) }));
-      return;
+    } else {
+      (async () => {
+        try {
+          const deps = await fetchDepartmentOptions(collegeId);
+          setDepartmentOptions([{ value: '', label: 'All Departments' }, ...deps]);
+          const yrs = await fetchBatchYearOptions(collegeId);
+          setBatchYearOptions(yrs);
+        } catch (err: any) {
+          setErrorMsg(err.message || 'Failed to load filters.');
+        }
+      })();
     }
+  }, []);
 
-    // For college_admin, load all departments
-    (async () => {
-      try {
-        const deps = await fetchDepartmentOptions(collegeId);
-        setDepartmentOptions([{ value: '', label: 'All Departments' }, ...deps]);
-        const yrs = await fetchBatchYearOptions(collegeId);
-        setBatchYearOptions([{ value: '', label: 'All Batch Years' }, ...yrs]);
-      } catch (err: any) {
-        setErrorMsg(err.message);
-      }
-    })();
-  }, [collegeId, isDepartmentAdmin, isClassAdmin, user?.department_id, user?.department_name]);
-
-  // Load sections on filter change
+  // Load batches on filter change
   useEffect(() => {
     (async () => {
       setIsLoading(true);
       try {
-        // For department/class admins, filter by their department_id
         const deptFilter = isDepartmentAdmin || isClassAdmin ? String(user.department_id) : selectedDepartment;
-        const secs = await getSections(collegeId, searchQuery, deptFilter, selectedBatchYear);
-        setSections(secs);
+        const bat = await getBatches(collegeId, searchQuery, deptFilter, selectedBatchYear);
+        setBatches(bat);
       } catch (err: any) {
-        setErrorMsg(err.message);
+        setErrorMsg(err.message || 'Failed to load batches.');
       } finally {
         setIsLoading(false);
       }
@@ -117,146 +111,167 @@ const SectionsPage: React.FC = () => {
   const openAddModal = () => {
     if (!canPerformCrud) return;
     setFormData({
-      section_code: '',
+      batch_code: '',
       name: '',
       department_id: isDepartmentAdmin ? String(user.department_id) : '',
       batch_year: '',
+      current_semester: '1',
     });
     setIsAddModalOpen(true);
   };
 
-  const openEditModal = (sec: Section) => {
+  const openEditModal = (bat: Batch) => {
     if (!canPerformCrud) return;
-    // For department_admin, ensure the section belongs to their department
-    if (isDepartmentAdmin && sec.department_id !== user.department_id) {
-      setErrorMsg('You can only edit sections in your department.');
+    if (isDepartmentAdmin && bat.department_id !== user.department_id) {
+      setErrorMsg('You can only edit batches in your department.');
       return;
     }
-    setSelectedSection(sec);
+    setSelectedBatch(bat);
     setFormData({
-      section_code: sec.section_code,
-      name: sec.name,
-      department_id: String(sec.department_id),
-      batch_year: String(sec.batch_year),
+      batch_code: bat.batch_code,
+      name: bat.name,
+      department_id: String(bat.department_id),
+      batch_year: String(bat.batch_year),
+      current_semester: String(bat.current_semester),
     });
     setIsEditModalOpen(true);
   };
 
-  const openDeleteModal = (sec: Section) => {
+  const openDeleteModal = (bat: Batch) => {
     if (!canPerformCrud) return;
-    // For department_admin, ensure the section belongs to their department
-    if (isDepartmentAdmin && sec.department_id !== user.department_id) {
-      setErrorMsg('You can only delete sections in your department.');
+    if (isDepartmentAdmin && bat.department_id !== user.department_id) {
+      setErrorMsg('You can only delete batches in your department.');
       return;
     }
-    setSelectedSection(sec);
+    setSelectedBatch(bat);
     setIsDeleteModalOpen(true);
   };
 
   const handleAdd = async () => {
     if (!canPerformCrud) return;
-    const deptId = Number(formData.department_id);
-    const batch = Number(formData.batch_year);
+    const { batch_code, name, department_id, batch_year, current_semester } = formData;
+    if (!batch_code.trim()) {
+      setErrorMsg('Batch code is required.');
+      return;
+    }
+    if (!name.trim()) {
+      setErrorMsg('Batch name is required.');
+      return;
+    }
+    const deptId = Number(department_id);
+    const batchYearNum = Number(batch_year);
+    const semesterNum = Number(current_semester);
     if (!deptId || deptId <= 0) {
-      setErrorMsg('Please select a Department.');
+      setErrorMsg('Please select a valid department.');
       return;
     }
-    if (!batch || batch <= 0) {
-      setErrorMsg('Please enter a valid Batch Year.');
+    if (!batchYearNum || batchYearNum < 2000 || batchYearNum > new Date().getFullYear() + 4) {
+      setErrorMsg('Please enter a valid batch year (2000 or later).');
       return;
     }
-    // For department_admin, ensure department_id matches user.department_id
+    if (!semesterNum || semesterNum < 1 || semesterNum > 8) {
+      setErrorMsg('Please select a valid semester (1–8).');
+      return;
+    }
     if (isDepartmentAdmin && deptId !== user.department_id) {
-      setErrorMsg('You can only add sections to your department.');
+      setErrorMsg('You can only add batches to your department.');
       return;
     }
     try {
-      const newSec = await addSection(
-        formData.section_code,
-        formData.name,
-        deptId,
-        batch
-      );
-      setSections(prev => [...prev, newSec]);
+      const newBatch = await addBatch(batch_code, name, deptId, batchYearNum, semesterNum);
+      setBatches(prev => [...prev, newBatch]);
       setIsAddModalOpen(false);
-      setFormData({ section_code: '', name: '', department_id: isDepartmentAdmin ? String(user.department_id) : '', batch_year: '' });
+      setFormData({ batch_code: '', name: '', department_id: isDepartmentAdmin ? String(user.department_id) : '', batch_year: '', current_semester: '1' });
     } catch (err: any) {
-      setErrorMsg(err.message);
+      setErrorMsg(err.message || 'Failed to add batch.');
     }
   };
 
   const handleEdit = async () => {
-    if (!canPerformCrud || !selectedSection) return;
-    const deptId = Number(formData.department_id);
-    const batch = Number(formData.batch_year);
+    if (!canPerformCrud || !selectedBatch) return;
+    const { batch_code, name, department_id, batch_year, current_semester } = formData;
+    if (!batch_code.trim()) {
+      setErrorMsg('Batch code is required.');
+      return;
+    }
+    if (!name.trim()) {
+      setErrorMsg('Batch name is required.');
+      return;
+    }
+    const deptId = Number(department_id);
+    const batchYearNum = Number(batch_year);
+    const semesterNum = Number(current_semester);
     if (!deptId || deptId <= 0) {
-      setErrorMsg('Please select a Department.');
+      setErrorMsg('Please select a valid department.');
       return;
     }
-    if (!batch || batch <= 0) {
-      setErrorMsg('Please enter a valid Batch Year.');
+    if (!batchYearNum || batchYearNum < 2000 || batchYearNum > new Date().getFullYear() + 4) {
+      setErrorMsg('Please enter a valid batch year (2000 or later).');
       return;
     }
-    // For department_admin, ensure department_id matches user.department_id
+    if (!semesterNum || semesterNum < 1 || semesterNum > 8) {
+      setErrorMsg('Please select a valid semester (1–8).');
+      return;
+    }
     if (isDepartmentAdmin && deptId !== user.department_id) {
-      setErrorMsg('You can only edit sections in your department.');
+      setErrorMsg('You can only edit batches in your department.');
       return;
     }
     try {
-      const updated = await updateSection(
-        selectedSection.id,
-        formData.section_code,
-        formData.name,
-        deptId,
-        batch
-      );
-      setSections(prev =>
-        prev.map(s => (s.id === updated.id ? updated : s))
-      );
+      const updated = await updateBatch(selectedBatch.id, batch_code, name, deptId, batchYearNum, semesterNum);
+      setBatches(prev => prev.map(b => (b.id === updated.id ? updated : b)));
       setIsEditModalOpen(false);
-      setSelectedSection(null);
-      setFormData({ section_code: '', name: '', department_id: isDepartmentAdmin ? String(user.department_id) : '', batch_year: '' });
+      setSelectedBatch(null);
+      setFormData({ batch_code: '', name: '', department_id: isDepartmentAdmin ? String(user.department_id) : '', batch_year: '', current_semester: '1' });
     } catch (err: any) {
-      setErrorMsg(err.message);
+      setErrorMsg(err.message || 'Failed to update batch.');
     }
   };
 
   const handleDelete = async () => {
-    if (!canPerformCrud || !selectedSection) return;
+    if (!canPerformCrud || !selectedBatch) return;
     try {
-      await deleteSection(selectedSection.id);
-      setSections(prev => prev.filter(s => s.id !== selectedSection.id));
+      await deleteBatch(selectedBatch.id);
+      setBatches(prev => prev.filter(b => b.id !== selectedBatch.id));
       setIsDeleteModalOpen(false);
-      setSelectedSection(null);
+      setSelectedBatch(null);
     } catch (err: any) {
-      setErrorMsg(err.message);
+      setErrorMsg(err.message || 'Failed to delete batch.');
     }
   };
 
   const columns = [
     {
-      header: 'Section Name',
-      accessor: (r: Section) => <span className="font-medium">{r.name}</span>,
+      header: 'Batch Name',
+      accessor: (r: Batch) => <span className="font-medium">{r.name}</span>,
     },
     {
-      header: 'Section Code',
-      accessor: (r: Section) => r.section_code,
+      header: 'Batch Code',
+      accessor: (r: Batch) => r.batch_code,
     },
     {
       header: 'Department',
-      accessor: (r: Section) => r.department_name,
+      accessor: (r: Batch) => r.department_name,
     },
     {
       header: 'Batch Year',
-      accessor: (r: Section) => (
+      accessor: (r: Batch) => (
         <Badge variant="primary" size="sm">
           <span className="text-[#6A5ACD] dark:text-[#1a1a40]">{r.batch_year}</span>
         </Badge>
       ),
     },
     {
+      header: 'Semester',
+      accessor: (r: Batch) => (
+        <Badge variant="primary" size="sm">
+          <span className="text-[#6A5ACD] dark:text-[#1a1a40]">{r.current_semester}</span>
+        </Badge>
+      ),
+    },
+    {
       header: 'Students',
-      accessor: (r: Section) => (
+      accessor: (r: Batch) => (
         <Badge variant="primary" size="sm">
           <span className="text-[#6A5ACD] dark:text-[#1a1a40]">{r.students_count}</span>
         </Badge>
@@ -264,14 +279,8 @@ const SectionsPage: React.FC = () => {
     },
     {
       header: 'Actions',
-      accessor: (r: Section) => (
+      accessor: (r: Batch) => (
         <div className="flex items-center space-x-2" onClick={e => e.stopPropagation()}>
-          <Button variant="outline" size="sm" icon={<Users size={14} />} onClick={() => console.log('View students', r.id)}>
-            Students
-          </Button>
-          <Button variant="outline" size="sm" icon={<BookOpen size={14} />} onClick={() => console.log('View subjects', r.id)}>
-            Subjects
-          </Button>
           {canPerformCrud && (
             <>
               <Button
@@ -294,15 +303,26 @@ const SectionsPage: React.FC = () => {
           )}
         </div>
       ),
-      className: 'w-96',
+      className: 'w-48', // Adjusted width since fewer buttons
     },
+  ];
+
+  const semesterOptions = [
+    { value: '1', label: 'Semester 1' },
+    { value: '2', label: 'Semester 2' },
+    { value: '3', label: 'Semester 3' },
+    { value: '4', label: 'Semester 4' },
+    { value: '5', label: 'Semester 5' },
+    { value: '6', label: 'Semester 6' },
+    { value: '7', label: 'Semester 7' },
+    { value: '8', label: 'Semester 8' },
   ];
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Sections</h1>
+        <h1 className="text-2xl font-bold">Batches</h1>
         {(isCollegeAdmin || isDepartmentAdmin) && (
           <div className="flex space-x-2">
             {isCollegeAdmin && (
@@ -312,19 +332,19 @@ const SectionsPage: React.FC = () => {
               </>
             )}
             <Button variant="primary" icon={<PlusCircle size={16} />} onClick={openAddModal}>
-              Add Section
+              Add Batch
             </Button>
           </div>
         )}
       </div>
 
       <Card>
-        {/* Filters (show only for college_admin) */}
+        {/* Filters (show only for college admin) */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
           {isCollegeAdmin && (
             <>
               <SearchInput
-                placeholder="Search sections..."
+                placeholder="Search batches..."
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
               />
@@ -346,7 +366,7 @@ const SectionsPage: React.FC = () => {
           )}
           <div className="flex items-end">
             <span className="text-sm">
-              Total: <strong>{sections.length}</strong> {(isDepartmentAdmin || isClassAdmin) ? 'section' : 'sections'}
+              Total: <strong>{batches.length}</strong> {batches.length === 1 ? 'batch' : 'batches'}
             </span>
           </div>
         </div>
@@ -354,30 +374,31 @@ const SectionsPage: React.FC = () => {
         {/* Table */}
         <Table
           columns={columns}
-          data={sections}
+          data={batches}
           keyField="id"
           isLoading={isLoading}
         />
       </Card>
 
-      {/* Add Section Modal */}
+      {/* Add Batch Modal */}
       {(isCollegeAdmin || isDepartmentAdmin) && (
         <Modal
           isOpen={isAddModalOpen}
           onClose={() => setIsAddModalOpen(false)}
-          title="Add Section"
+          title="Add Batch"
           footer={
             <>
               <Button variant="outline" onClick={() => setIsAddModalOpen(false)}>Cancel</Button>
-              <Button variant="primary" onClick={handleAdd}>Add Section</Button>
+              <Button variant="primary" onClick={handleAdd}>Add Batch</Button>
             </>
           }
         >
           <Input
-            label="Section Code"
-            name="section_code"
-            value={formData.section_code}
+            label="Batch Code"
+            name="batch_code"
+            value={formData.batch_code}
             onChange={handleInputChange}
+            placeholder="e.g., CSE-2022-A"
             required
           />
           <Input
@@ -385,6 +406,7 @@ const SectionsPage: React.FC = () => {
             name="name"
             value={formData.name}
             onChange={handleInputChange}
+            placeholder="e.g., CSE Section A 2022"
             required
           />
           <SelectInput
@@ -394,32 +416,36 @@ const SectionsPage: React.FC = () => {
             value={formData.department_id}
             onChange={handleInputChange}
             required
-            disabled={isDepartmentAdmin} // Lock department for department_admin
+            disabled={isDepartmentAdmin}
           />
           <Input
             label="Batch Year"
             name="batch_year"
             type="number"
-            list="batchYears"
-            placeholder="Type or select year"
+            placeholder="e.g., 2022"
             value={formData.batch_year}
             onChange={handleInputChange}
             required
+            min="2000"
+            max={new Date().getFullYear() + 4}
           />
-          <datalist id="batchYears">
-            {batchYearOptions.map(opt => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
-            ))}
-          </datalist>
+          <SelectInput
+            label="Current Semester"
+            name="current_semester"
+            options={semesterOptions}
+            value={formData.current_semester}
+            onChange={handleInputChange}
+            required
+          />
         </Modal>
       )}
 
-      {/* Edit Section Modal */}
+      {/* Edit Batch Modal */}
       {(isCollegeAdmin || isDepartmentAdmin) && (
         <Modal
           isOpen={isEditModalOpen}
           onClose={() => setIsEditModalOpen(false)}
-          title="Edit Section"
+          title="Edit Batch"
           footer={
             <>
               <Button variant="outline" onClick={() => setIsEditModalOpen(false)}>Cancel</Button>
@@ -428,10 +454,11 @@ const SectionsPage: React.FC = () => {
           }
         >
           <Input
-            label="Section Code"
-            name="section_code"
-            value={formData.section_code}
+            label="Batch Code"
+            name="batch_code"
+            value={formData.batch_code}
             onChange={handleInputChange}
+            placeholder="e.g., CSE-2022-A"
             required
           />
           <Input
@@ -439,6 +466,7 @@ const SectionsPage: React.FC = () => {
             name="name"
             value={formData.name}
             onChange={handleInputChange}
+            placeholder="e.g., CSE Section A 2022"
             required
           />
           <SelectInput
@@ -448,32 +476,36 @@ const SectionsPage: React.FC = () => {
             value={formData.department_id}
             onChange={handleInputChange}
             required
-            disabled={isDepartmentAdmin} // Lock department for department_admin
+            disabled={isDepartmentAdmin}
           />
           <Input
             label="Batch Year"
             name="batch_year"
             type="number"
-            list="batchYears"
-            placeholder="Type or select year"
+            placeholder="e.g., 2022"
             value={formData.batch_year}
             onChange={handleInputChange}
             required
+            min="2000"
+            max={new Date().getFullYear() + 4}
           />
-          <datalist id="batchYears">
-            {batchYearOptions.map(opt => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
-            ))}
-          </datalist>
+          <SelectInput
+            label="Current Semester"
+            name="current_semester"
+            options={semesterOptions}
+            value={formData.current_semester}
+            onChange={handleInputChange}
+            required
+          />
         </Modal>
       )}
 
-      {/* Delete Section Modal */}
+      {/* Delete Batch Modal */}
       {(isCollegeAdmin || isDepartmentAdmin) && (
         <Modal
           isOpen={isDeleteModalOpen}
           onClose={() => setIsDeleteModalOpen(false)}
-          title="Delete Section"
+          title="Delete Batch"
           footer={
             <>
               <Button variant="outline" onClick={() => setIsDeleteModalOpen(false)}>Cancel</Button>
@@ -481,7 +513,7 @@ const SectionsPage: React.FC = () => {
             </>
           }
         >
-          <p>Are you sure you want to delete <strong>{selectedSection?.name}</strong>?</p>
+          <p>Are you sure you want to delete <strong>{selectedBatch?.name}</strong>?</p>
           <p className="mt-2 text-[#FF4C4C]">This action cannot be undone.</p>
         </Modal>
       )}
@@ -501,4 +533,4 @@ const SectionsPage: React.FC = () => {
   );
 };
 
-export default SectionsPage;
+export default BatchesPage;

@@ -1,16 +1,30 @@
 export interface Admin {
   id: number;
-  username: string;
-  password: string;
-  role: 'college' | 'department';
-  college_id: number | null;
+  name: string;
+  email: string;
+  contact_number: string;
+  role: 'college' | 'department' | 'class';
+  college_id: number;
   department_id: number | null;
   college_name: string | null;
-  super_user_id: number;
+  college_code: string | null;
   department_name: string | null;
-  college_code: string;
-  department_code: string;
-  token: string | null; // Added for authentication
+  department_code: string | null;
+  token: string | null;
+}
+
+export interface AdminProfile {
+  id: number;
+  name: string;
+  email: string;
+  contact_number: string;
+  role: 'college' | 'department' | 'class';
+  college_id: number;
+  college_name: string | null;
+  college_code: string | null;
+  department_id: number | null;
+  department_name: string | null;
+  department_code: string | null;
 }
 
 export interface College {
@@ -19,12 +33,16 @@ export interface College {
   name: string;
 }
 
-export interface CollegeDetails extends College {
-  location: string;
+export interface CollegeDetails {
+  id: number;
+  college_code: string;
+  name: string;
+  address: string;
   established: string;
   contact_email: string;
   contact_phone: string;
   website: string;
+  logo: string;
 }
 
 export interface Department {
@@ -37,37 +55,47 @@ export interface Department {
   faculties_count: number;
 }
 
-export interface Section {
+export interface Batch {
   id: number;
-  department_id: number;
-  batch_year: number;
-  section_code: string;
+  batch_code: string;
   name: string;
+  department_id: number;
   department_name: string;
+  batch_year: number;
   students_count: number;
+  current_year: '1st' | '2nd' | '3rd' | '4th';
+  current_semester: number;
+  room_number: string;
+  faculty_incharge_name: string | null;
 }
 
 export interface Student {
   id: string;
   name: string;
-  gmail: string;
+  email: string;
   phone: string;
-  semester_no: string;
-  section_id: number;
-  section_name: string;
+  batch_id: number;
+  batch_name: string;
   department_id: number;
   department_name: string;
+  current_year: '1st' | '2nd' | '3rd' | '4th';
+  address: string;
+  pan_number: string;
+  aadhar_number: string;
+  father_phone: string;
+  mother_phone: string;
 }
 
 export interface Faculty {
   id: string;
   department_id: number;
   department_name: string;
-  faculty_name: string;
-  joining_year: number;
-  designation: string;
-  faculty_mail: string;
+  name: string;
+  email: string;
   subjects_count: number;
+  phone: string;
+  dob: string | null;
+  qualification: string;
 }
 
 export interface Subject {
@@ -76,25 +104,27 @@ export interface Subject {
   name: string;
   department_id: number;
   department_name: string;
-  semester_no: number;
+  credits: number;
   faculty_count: number;
 }
 
 export interface Period {
   id: number;
-  section_id: number;
+  batch_id: number;
   time_slot: string;
   name: string;
 }
 
 export interface TimetableEntry {
   id: number;
-  section_id: number;
+  batch_id: number;
   weekday: 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday' | 'Sunday';
   period_id: number;
   subject_id: number;
   semester_no: number;
   faculty_id: string;
+  subject: string;
+  faculty: string;
 }
 
 export interface AttendanceSession {
@@ -109,7 +139,7 @@ export interface AttendanceRecord {
   period_time: string;
   period_name: string;
   department: string;
-  batch_year: number;
+  batch_name: string;
   semester_no: number;
   subject: string;
   faculty: string;
@@ -127,8 +157,7 @@ export interface DashboardStats {
   students: number;
   faculties: number;
   departments?: number;
-  batches?: number;
-  sections: number;
+  batches: number;
 }
 
 export interface AttendanceData {

@@ -5,6 +5,11 @@ import dotenv from 'dotenv';
 dotenv.config();
 import { QueryResult } from 'pg';
 
+// Define a type for PostgreSQL errors
+interface PostgresError {
+  code: string;
+  message: string;
+}
 const router: Router = express.Router();
 const crypto = require('crypto');
 
@@ -185,7 +190,7 @@ router.post('/updateAdminProfile', async (req: Request, res: Response) => {
   try {
     const updates = ['name = $1', 'email = $2'];
     const params: any[] = [name, email];
-    
+
     if (contact_number) {
       updates.push(`contact_number = $${params.length + 1}`);
       params.push(contact_number);
@@ -272,7 +277,7 @@ router.post('/dashboardstats', async (req: Request, res: Response) => {
   }
 
   try {
-    if (role === 'college_admin') {
+    if (role === 'college') {
       const [students, faculties, departments, batches, attendance] = await Promise.all([
         pool.query(
           `SELECT COUNT(*) AS cnt
@@ -305,7 +310,8 @@ router.post('/dashboardstats', async (req: Request, res: Response) => {
         pool.query(
           `SELECT d.dept_code AS name,
                   COUNT(ar.*) FILTER (WHERE ar.status = 'Present') AS present,
-                  COUNT(ar.*) FILTER (WHERE ar.status = 'Absent') AS absent
+                  COUNT(ar.*) FILTER (WHERE ar.status = 'Absent') AS absent,
+                  COUNT(ar.*) FILTER (WHERE ar.status = 'Leave') AS leave
              FROM departments d
              LEFT JOIN batches b ON b.department_id = d.id
              LEFT JOIN students s ON s.batch_id = b.id
@@ -326,7 +332,7 @@ router.post('/dashboardstats', async (req: Request, res: Response) => {
         attendanceData: attendance.rows,
       });
 
-    } else if (role === 'department_admin' || role === 'class_admin') {
+    } else if (role === 'department' || role === 'class') {
       if (!department_id) {
         return res.status(400).json({ message: 'department_id is required for department/class admins.' });
       }
@@ -353,7 +359,8 @@ router.post('/dashboardstats', async (req: Request, res: Response) => {
         pool.query(
           `SELECT b.batch_code AS name,
                   COUNT(ar.*) FILTER (WHERE ar.status = 'Present') AS present,
-                  COUNT(ar.*) FILTER (WHERE ar.status = 'Absent') AS absent
+                  COUNT(ar.*) FILTER (WHERE ar.status = 'Absent') AS absent,
+                  COUNT(ar.*) FILTER (WHERE ar.status = 'Leave') AS leave
              FROM batches b
              LEFT JOIN students s ON s.batch_id = b.id
              LEFT JOIN attendance_records ar ON ar.student_id = s.id
@@ -384,7 +391,7 @@ router.post('/dashboardstats', async (req: Request, res: Response) => {
 ////////////////////////////////////////////////////////////////////////////////
 // College Details (fetch & update)
 ////////////////////////////////////////////////////////////////////////////////
-router.post(['/FetchCollegeDetails', '/FetchCollageDetails'], async (req: Request, res: Response) => {
+router.post('/FetchCollegeDetails', async (req: Request, res: Response) => {
   const { college_id } = req.body;
   if (!college_id) {
     return res.status(400).json({ message: 'college_id is required.' });
@@ -402,16 +409,16 @@ router.post(['/FetchCollegeDetails', '/FetchCollageDetails'], async (req: Reques
     if (rowCount === 0) {
       return res.status(404).json({ message: 'College not found.' });
     }
-    return res.json({ college: rows[0] });
+    return res.json({ college: rows[0], success: true });
   } catch (error) {
-    console.error('Fetch College Error:', error);
+    console.error('Fetch College Error:', error, {});
     return res.status(500).json({ message: 'Internal server error.' });
   }
 });
 
 router.post('/updateCollegeDetails', async (req: Request, res: Response) => {
   const { id, name, address, established, contact_email, contact_phone, website, logo, role } = req.body;
-  if (role !== 'college_admin') {
+  if (role !== 'college') {
     return res.status(403).json({ message: 'Unauthorized. Only college admins can edit.' });
   }
   if (!id || !name) {
@@ -419,9 +426,8 @@ router.post('/updateCollegeDetails', async (req: Request, res: Response) => {
   }
 
   try {
-    const updates = ['name = $1', 'updated_at = NOW()'];
+    const updates = ['name = $1'];
     const params: any[] = [name];
-    
     if (address) { updates.push(`address = $${params.length + 1}`); params.push(address); }
     if (established) { updates.push(`established = $${params.length + 1}`); params.push(established); }
     if (contact_email) { updates.push(`email = $${params.length + 1}`); params.push(contact_email); }
@@ -430,19 +436,25 @@ router.post('/updateCollegeDetails', async (req: Request, res: Response) => {
     if (logo) { updates.push(`logo = $${params.length + 1}`); params.push(logo); }
     params.push(id);
 
+    console.log('Update Query:', `UPDATE colleges SET ${updates.join(', ')} WHERE id = $${params.length}`, params); // Debug query
+
     const result = await pool.query(
       `UPDATE colleges
           SET ${updates.join(', ')}
         WHERE id = $${params.length}
-        RETURNING id, college_code, name, address, established, email, phone, website, logo`,
+        RETURNING id, college_code, name, address, established,
+                  email AS contact_email, phone AS contact_phone, website, logo`,
       params
     );
+
     if (result.rowCount === 0) {
-      return res.status(404).json({ message: 'College not found.' });
+      console.log(`No college found with id: ${id}`);
+      return res.status(404).json({ message: `College with id ${id} not found.` });
     }
-    return res.json({ college: result.rows[0], message: 'College updated.' });
+
+    return res.json({ college: result.rows[0], success: true, message: 'College updated successfully.' });
   } catch (error) {
-    console.error('Update College Error:', error);
+    console.error('Update College Error:', error, {});
     return res.status(500).json({ message: 'Internal server error.' });
   }
 });
@@ -546,21 +558,38 @@ router.put('/editdepartment/:id', async (req: Request, res: Response) => {
 router.delete('/deletedepartment/:id', async (req: Request, res: Response) => {
   const id = Number(req.params.id);
   try {
+    // Check for dependent admins
+    const adminCheck = await pool.query(
+      `SELECT 1 FROM admins WHERE department_id = $1 LIMIT 1`,
+      [id]
+    );
+    if (adminCheck.rowCount !== null && adminCheck.rowCount > 0) {
+      return res.status(400).json({ 
+        message: 'Cannot delete department because it is associated with one or more admins.' 
+      });
+    }
+
     const result = await pool.query(`DELETE FROM departments WHERE id = $1 RETURNING id`, [id]);
     if (result.rowCount === 0) {
       return res.status(404).json({ message: 'Department not found.' });
     }
     return res.json({ success: true });
-  } catch (err) {
+  } catch (err: any) {
     console.error('Delete Department Error:', err);
+    if (err.code === '23503') {
+      return res.status(400).json({ 
+        message: 'Cannot delete department because it is associated with one or more admins.' 
+      });
+    }
     return res.status(500).json({ message: 'Failed to delete department.' });
   }
 });
 
-////////////////////////////////////////////////////////////////////////////////
-// Batches CRUD
-////////////////////////////////////////////////////////////////////////////////
-// /fetchbatches
+
+
+  ////////////////////////////////////////////////////////////////////////////////
+  // Batches CRUD
+  ////////////////////////////////////////////////////////////////////////////////
 router.get('/fetchbatches', async (req: Request, res: Response) => {
   const collegeId = Number(req.query.college_id);
   if (!collegeId) {
@@ -617,7 +646,7 @@ router.get('/fetchbatches', async (req: Request, res: Response) => {
   }
 });
 
-// /fetchbatchyears
+// /fetchbatchyears (unchanged)
 router.get(['/fetchbatchyears', '/fetchBatchYears'], async (req: Request, res: Response) => {
   const collegeId = Number(req.query.college_id);
   if (!collegeId) {
@@ -641,7 +670,7 @@ router.get(['/fetchbatchyears', '/fetchBatchYears'], async (req: Request, res: R
   }
 });
 
-// /addbatch
+// /addbatch (updated)
 router.post('/addbatch', async (req: Request, res: Response) => {
   const { batch_code, name, batch_year, current_year, department_id, room_number, faculty_incharge } = req.body;
   if (!batch_code || !name || !batch_year || !current_year || !department_id) {
@@ -653,7 +682,8 @@ router.post('/addbatch', async (req: Request, res: Response) => {
        VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING id, batch_code, name, batch_year, current_year, department_id, room_number, faculty_incharge,
                  (SELECT name FROM departments WHERE id = $5) AS department_name,
-                 0 AS students_count;`,
+                 (SELECT COUNT(*) FROM students WHERE batch_id = currval('batches_id_seq')) AS students_count,
+                 (SELECT name FROM faculties WHERE id = $7) AS faculty_incharge_name;`,
       [batch_code, name, batch_year, current_year, department_id, room_number || 'N/A', faculty_incharge || null]
     );
     return res.json({ batch: result.rows[0] });
@@ -669,7 +699,7 @@ router.post('/addbatch', async (req: Request, res: Response) => {
   }
 });
 
-// /editbatch/:id
+// /editbatch/:id (unchanged)
 router.put('/editbatch/:id', async (req: Request, res: Response) => {
   const id = Number(req.params.id);
   const { batch_code, name, batch_year, current_year, department_id, room_number, faculty_incharge } = req.body;
@@ -711,7 +741,7 @@ router.put('/editbatch/:id', async (req: Request, res: Response) => {
   }
 });
 
-// /deletebatch/:id
+// /deletebatch/:id (unchanged)
 router.delete('/deletebatch/:id', async (req: Request, res: Response) => {
   const id = Number(req.params.id);
   try {
@@ -730,7 +760,6 @@ router.delete('/deletebatch/:id', async (req: Request, res: Response) => {
 // Students CRUD & Forgot Password
 ////////////////////////////////////////////////////////////////////////////////
 
-
 router.get('/fetchstudents', async (req: Request, res: Response) => {
   const collegeId = Number(req.query.college_id);
   if (!collegeId) {
@@ -738,18 +767,18 @@ router.get('/fetchstudents', async (req: Request, res: Response) => {
   }
   const search = (req.query.search || '').toString().trim();
   const dept = req.query.dept ? Number(req.query.dept) : null;
-  const batch = req.query.batch ? Number(req.query.batch) : null; // Changed from currentYear
+  const batch = req.query.batch ? Number(req.query.batch) : null;
 
   try {
     let sql = `
       SELECT
         s.id,
         s.name,
-        s.email AS gmail, -- Match frontend Student type
+        s.email,
         s.phone,
-        s.current_year AS semester_no, -- Match frontend Student type
-        s.batch_id AS section_id, -- Match frontend Student type
-        b.batch_code AS section_name, -- Match frontend Student type
+        s.current_year,
+        s.batch_id,
+        b.batch_code AS batch_name,
         b.department_id,
         d.name AS department_name
       FROM students s
@@ -769,7 +798,7 @@ router.get('/fetchstudents', async (req: Request, res: Response) => {
     }
     if (batch) {
       params.push(batch);
-      sql += ` AND s.batch_id = $${params.length}`; // Filter by batch_id
+      sql += ` AND s.batch_id = $${params.length}`;
     }
 
     sql += ' ORDER BY s.id;';
@@ -789,13 +818,47 @@ router.post('/addstudent', async (req: Request, res: Response) => {
   }
 
   try {
+    // Insert the student without subqueries
     const result = await pool.query(
       `INSERT INTO students (id, name, email, batch_id, current_year, phone, address, pan_number, aadhar_number, father_phone, mother_phone, password)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-       RETURNING id, name, email, batch_id, current_year, phone, address, pan_number, aadhar_number, father_phone, mother_phone;`,
+       RETURNING 
+         id, 
+         name, 
+         email,
+         batch_id,
+         current_year,
+         phone, 
+         address, 
+         pan_number, 
+         aadhar_number, 
+         father_phone, 
+         mother_phone`,
       [id, name, email, batch_id, current_year, phone || 'N/A', address || 'N/A', pan_number || 'N/A', aadhar_number || 'N/A', father_phone || 'N/A', mother_phone || 'N/A', password]
     );
-    return res.json({ student: result.rows[0] });
+
+    // Fetch batch_name and department_name separately
+    const student = result.rows[0];
+    const batchResult = await pool.query(
+      `SELECT 
+         b.batch_code AS batch_name,
+         d.name AS department_name
+       FROM batches b
+       JOIN departments d ON d.id = b.department_id
+       WHERE b.id = $1`,
+      [student.batch_id]
+    );
+
+    // Combine the results
+    if (batchResult.rows.length > 0) {
+      student.batch_name = batchResult.rows[0].batch_name;
+      student.department_name = batchResult.rows[0].department_name;
+    } else {
+      student.batch_name = null;
+      student.department_name = null;
+    }
+
+    return res.json({ student });
   } catch (err: any) {
     console.error('Add Student Error:', err);
     if (err.code === '23505') {
@@ -832,18 +895,52 @@ router.put('/editstudent/:id', async (req: Request, res: Response) => {
   params.push(id);
 
   try {
+    // Update the student without subqueries
     const result = await pool.query(
       `UPDATE students
-          SET ${updates.join(', ')},
-              updated_at = NOW()
-        WHERE id = $${params.length}
-        RETURNING id, name, email, batch_id, current_year, phone, address, pan_number, aadhar_number, father_phone, mother_phone;`,
+       SET ${updates.join(', ')},
+           updated_at = NOW()
+       WHERE id = $${params.length}
+       RETURNING 
+         id, 
+         name, 
+         email,
+         batch_id,
+         current_year,
+         phone, 
+         address, 
+         pan_number, 
+         aadhar_number, 
+         father_phone, 
+         mother_phone`,
       params
     );
     if (result.rowCount === 0) {
       return res.status(404).json({ message: 'Student not found.' });
     }
-    return res.json({ student: result.rows[0] });
+
+    // Fetch batch_name and department_name separately
+    const student = result.rows[0];
+    const batchResult = await pool.query(
+      `SELECT 
+         b.batch_code AS batch_name,
+         d.name AS department_name
+       FROM batches b
+       JOIN departments d ON d.id = b.department_id
+       WHERE b.id = $1`,
+      [student.batch_id]
+    );
+
+    // Combine the results
+    if (batchResult.rows.length > 0) {
+      student.batch_name = batchResult.rows[0].batch_name;
+      student.department_name = batchResult.rows[0].department_name;
+    } else {
+      student.batch_name = null;
+      student.department_name = null;
+    }
+
+    return res.json({ student });
   } catch (err: any) {
     console.error('Edit Student Error:', err);
     if (err.code === '23505') {
@@ -1373,10 +1470,12 @@ router.get('/fetchDepartmentAdmins', async (req, res) => {
         a.email,
         a.contact_number,
         a.department_id,
-        d.name AS department_name
+        a.role,
+        d.name AS department_name,
+        a.created_at
       FROM admins a
       LEFT JOIN departments d ON a.department_id = d.id
-      WHERE a.role IN ('department_admin', 'class_admin')
+      WHERE a.role IN ('department', 'class')
         AND a.college_id = $1
       ORDER BY a.id
       `,
@@ -1402,19 +1501,22 @@ router.post('/addDepartmentAdmin', async (req, res) => {
   try {
     const result = await pool.query(
       `INSERT INTO admins
-         (name, email, password, role, college_id, department_id)
+         (name, email, password, role, college_id, department_id, created_at)
        VALUES
-         ($1, $2, $3, 'department_admin', $4, $5)
-       RETURNING id, name, email, contact_number, department_id`,
+         ($1, $2, $3, 'department', $4, $5, NOW())
+       RETURNING id, name, email, contact_number, department_id, role,
+         (SELECT name FROM departments WHERE id = $5) AS department_name,
+         created_at`,
       [name, email, password, college_id, department_id]
     );
     return res.status(201).json({ admin: result.rows[0] });
-  } catch (err: any) {
-    console.error('addDepartmentAdmin Error:', err);
-    if (err.code === '23505') {
+  } catch (err) {
+    const pgErr = err as PostgresError;
+    console.error('addDepartmentAdmin Error:', pgErr);
+    if (pgErr.code === '23505') {
       return res.status(409).json({ message: 'Email already exists.' });
     }
-    if (err.code === '23503') {
+    if (pgErr.code === '23503') {
       return res.status(400).json({ message: 'Invalid college_id or department_id.' });
     }
     return res.status(500).json({ message: 'Internal server error.' });
@@ -1430,14 +1532,15 @@ router.put('/editDepartmentAdmin/:id', async (req, res) => {
   }
 
   const updates = ['name = $1', 'email = $2', 'department_id = $3'];
-  const params: any[] = [name, email, department_id];
+  const params = [name, email, department_id];
+  let paramIndex = 4;
 
   if (password) {
-    updates.push(`password = $${params.length + 1}`);
+    updates.push(`password = $${paramIndex++}`);
     params.push(password);
   }
   if (contact_number) {
-    updates.push(`contact_number = $${params.length + 1}`);
+    updates.push(`contact_number = $${paramIndex++}`);
     params.push(contact_number);
   }
   params.push(id);
@@ -1445,23 +1548,26 @@ router.put('/editDepartmentAdmin/:id', async (req, res) => {
   try {
     const result = await pool.query(
       `UPDATE admins
-          SET ${updates.join(', ')},
-              updated_at = NOW()
-        WHERE id = $${params.length}
-          AND role IN ('department_admin', 'class_admin')
-        RETURNING id, name, email, contact_number, department_id`,
+         SET ${updates.join(', ')},
+             updated_at = NOW()
+       WHERE id = $${paramIndex}
+         AND role IN ('department', 'class')
+       RETURNING id, name, email, contact_number, department_id, role,
+         (SELECT name FROM departments WHERE id = $3) AS department_name,
+         created_at`,
       params
     );
     if (result.rowCount === 0) {
       return res.status(404).json({ message: 'Admin not found.' });
     }
     return res.json({ admin: result.rows[0] });
-  } catch (err: any) {
-    console.error('editDepartmentAdmin Error:', err);
-    if (err.code === '23505') {
+  } catch (err) {
+    const pgErr = err as PostgresError;
+    console.error('editDepartmentAdmin Error:', pgErr);
+    if (pgErr.code === '23505') {
       return res.status(409).json({ message: 'Email already in use.' });
     }
-    if (err.code === '23503') {
+    if (pgErr.code === '23503') {
       return res.status(400).json({ message: 'Invalid department_id.' });
     }
     return res.status(500).json({ message: 'Internal server error.' });
@@ -1473,9 +1579,9 @@ router.delete('/deleteDepartmentAdmin/:id', async (req, res) => {
   try {
     const result = await pool.query(
       `DELETE FROM admins
-        WHERE id = $1
-          AND role IN ('department_admin', 'class_admin')
-        RETURNING id`,
+       WHERE id = $1
+         AND role IN ('department', 'class')
+       RETURNING id`,
       [id]
     );
     if (result.rowCount === 0) {

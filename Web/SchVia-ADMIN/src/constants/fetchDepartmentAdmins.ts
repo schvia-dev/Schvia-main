@@ -2,12 +2,13 @@
 
 export interface DepartmentAdmin {
   id: number;
-  username: string;
-  gmail: string;
+  name: string;
+  email: string;
   department_id: number;
   department_name: string;
+  role: 'department' | 'class';
+  contact_number: string;
   created_at: string;
-  last_login: string;
 }
 
 const BASE = '/web';
@@ -31,14 +32,12 @@ export async function fetchDepartmentAdmins(
 }
 
 export async function addDepartmentAdmin(payload: {
-  username: string;
-  gmail: string;
+  name: string;
+  email: string;
   password: string;
   college_id: number;
-  super_user_id: number;
   department_id: number;
 }): Promise<DepartmentAdmin> {
-  console.log(payload);
   const res = await fetch(`${BASE}/addDepartmentAdmin`, {
     method: 'POST',
     credentials: 'include',
@@ -56,8 +55,8 @@ export async function addDepartmentAdmin(payload: {
 export async function editDepartmentAdmin(
   id: number,
   payload: {
-    username: string;
-    gmail: string;
+    name: string;
+    email: string;
     department_id: number;
     password?: string;
   }

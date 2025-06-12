@@ -27,7 +27,7 @@ import {
 import {
   fetchDepartmentOptions,
   fetchSectionOptions
-} from '../../constants/fetchStudentsFilters';
+} from '../../constants/fetchSectionsOptions';
 
 const generateRandomPassword = () => {
   return Math.random().toString(36).slice(-8);
@@ -65,10 +65,16 @@ const StudentsPage: React.FC = () => {
   const [form, setForm] = useState({
     id: '',
     name: '',
-    gmail: '',
+    email: '',
     batch_id: '',
     current_year: '',
-    password: ''
+    password: '',
+    phone: '',
+    address: '',
+    pan_number: '',
+    aadhar_number: '',
+    father_phone: '',
+    mother_phone: ''
   });
 
   // Notification modal state
@@ -82,7 +88,6 @@ const StudentsPage: React.FC = () => {
         setDeptOptions(
           user.role === 'department' ? depts : [{ value: '', label: 'All Departments' }, ...depts]
         );
-        // Fetch batches based on selected department
         const batches = await fetchSectionOptions(collegeId, user, selectedDept);
         setSectionOptions([{ value: '', label: 'All Batches' }, ...batches]);
         if (!batches.length) {
@@ -119,7 +124,20 @@ const StudentsPage: React.FC = () => {
 
   // Open modals
   const openAdd = () => {
-    setForm({ id: '', name: '', gmail: '', batch_id: '', current_year: '', password: generateRandomPassword() });
+    setForm({
+      id: '',
+      name: '',
+      email: '',
+      batch_id: '',
+      current_year: '',
+      password: generateRandomPassword(),
+      phone: '',
+      address: '',
+      pan_number: '',
+      aadhar_number: '',
+      father_phone: '',
+      mother_phone: ''
+    });
     setIsAddOpen(true);
   };
   const openEdit = (stu: Student) => {
@@ -127,10 +145,16 @@ const StudentsPage: React.FC = () => {
     setForm({
       id: stu.id.toString(),
       name: stu.name,
-      gmail: stu.gmail,
-      batch_id: stu.section_id.toString(),
-      current_year: stu.semester_no.toString(),
-      password: ''
+      email: stu.email,
+      batch_id: stu.batch_id.toString(),
+      current_year: stu.current_year.toString(),
+      password: '',
+      phone: stu.phone || '',
+      address: stu.address || '',
+      pan_number: stu.pan_number || '',
+      aadhar_number: stu.aadhar_number || '',
+      father_phone: stu.father_phone || '',
+      mother_phone: stu.mother_phone || ''
     });
     setIsEditOpen(true);
   };
@@ -145,12 +169,12 @@ const StudentsPage: React.FC = () => {
 
   // CRUD handlers
   const handleAdd = async () => {
-    const { id, name, gmail, batch_id, current_year, password } = form;
-    if (!id || !name || !gmail || !batch_id || !current_year || !password) {
-      setNotify({ type: 'error', message: 'Please fill all required fields.' });
+    const { id, name, email, batch_id, current_year, password, phone, address, pan_number, aadhar_number, father_phone, mother_phone } = form;
+    if (!id || !name || !email || !batch_id || !current_year || !password) {
+      setNotify({ type: 'error', message: 'Please fill all required fields (ID, Name, Email, Batch, Current Year, Password).' });
       return;
     }
-    if (!isValidEmail(gmail)) {
+    if (!isValidEmail(email)) {
       setNotify({ type: 'error', message: 'Please enter a valid email address.' });
       return;
     }
@@ -159,10 +183,16 @@ const StudentsPage: React.FC = () => {
         user,
         id,
         name,
-        gmail,
+        email,
         parseInt(batch_id, 10),
         current_year,
-        password
+        password,
+        phone || 'N/A',
+        address || 'N/A',
+        pan_number || 'N/A',
+        aadhar_number || 'N/A',
+        father_phone || 'N/A',
+        mother_phone || 'N/A'
       );
       setStudents(prev => [...prev, newStu]);
       setIsAddOpen(false);
@@ -175,12 +205,12 @@ const StudentsPage: React.FC = () => {
 
   const handleEdit = async () => {
     if (!selected) return;
-    const { name, gmail, batch_id, current_year } = form;
-    if (!name || !gmail || !batch_id || !current_year) {
-      setNotify({ type: 'error', message: 'Please fill all required fields.' });
+    const { name, email, batch_id, current_year, phone, address, pan_number, aadhar_number, father_phone, mother_phone } = form;
+    if (!name || !email || !batch_id || !current_year) {
+      setNotify({ type: 'error', message: 'Please fill all required fields (Name, Email, Batch, Current Year).' });
       return;
     }
-    if (!isValidEmail(gmail)) {
+    if (!isValidEmail(email)) {
       setNotify({ type: 'error', message: 'Please enter a valid email address.' });
       return;
     }
@@ -189,9 +219,15 @@ const StudentsPage: React.FC = () => {
         user,
         form.id,
         name,
-        gmail,
+        email,
         parseInt(batch_id, 10),
-        current_year
+        current_year,
+        phone || 'N/A',
+        address || 'N/A',
+        pan_number || 'N/A',
+        aadhar_number || 'N/A',
+        father_phone || 'N/A',
+        mother_phone || 'N/A'
       );
       setStudents(prev => prev.map(s => (s.id === updated.id ? updated : s)));
       setIsEditOpen(false);
@@ -245,13 +281,13 @@ const StudentsPage: React.FC = () => {
       header: 'Name',
       accessor: (r: Student) => <span className="font-medium">{r.name}</span>
     },
-    { header: 'Email', accessor: (r: Student) => r.gmail },
+    { header: 'Email', accessor: (r: Student) => r.email },
     { header: 'Department', accessor: (r: Student) => r.department_name },
     {
       header: 'Batch',
       accessor: (r: Student) => (
         <Badge variant="primary" size="sm">
-          <span className="text-[#6A5ACD] dark:text-[#1a1a40]">{r.section_name}</span>
+          <span className="text-[#6A5ACD] dark:text-[#1a1a40]">{r.batch_name}</span>
         </Badge>
       )
     },
@@ -259,7 +295,7 @@ const StudentsPage: React.FC = () => {
       header: 'Current Year',
       accessor: (r: Student) => (
         <Badge variant="primary" size="sm">
-          <span className="text-[#6A5ACD] dark:text-[#1a1a40]">{r.semester_no}</span>
+          <span className="text-[#6A5ACD] dark:text-[#1a1a40]">{r.current_year}</span>
         </Badge>
       )
     },
@@ -300,8 +336,17 @@ const StudentsPage: React.FC = () => {
     }
   ];
 
+  // Debug modal rendering
+  useEffect(() => {
+    if (isAddOpen) {
+      console.log('Add Student Modal Opened. Form state:', form);
+      console.log('Section Options:', sectionOptions);
+      console.log('User Role:', user.role, 'Selected Dept:', selectedDept);
+    }
+  }, [isAddOpen, form, sectionOptions, user.role, selectedDept]);
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">
@@ -346,6 +391,7 @@ const StudentsPage: React.FC = () => {
           )}
           <SelectInput
             label="Batch"
+            name="batch_id"
             placeholder="All Batches"
             value={selectedBatch}
             options={sectionOptions}
@@ -376,46 +422,61 @@ const StudentsPage: React.FC = () => {
           </>
         }
       >
-        <Input label="Student ID" name="id" value={form.id} onChange={onChange} required />
-        <Input label="Name" name="name" value={form.name} onChange={onChange} required />
-        <Input
-          label="Email"
-          name="gmail"
-          type="email"
-          value={form.gmail}
-          onChange={onChange}
-          required
-        />
-        {user.role === 'department' && (
-          <Input
-            label="Department"
-            value={deptOptions.find(d => d.value === selectedDept)?.label || ''}
-            disabled
-            className="bg-gray-100 dark:bg-gray-800"
-          />
-        )}
-        <SelectInput
-          label="Batch"
-          name="batch_id"
-          value={form.batch_id}
-          options={[{ value: '', label: 'Select Batch' }, ...sectionOptions.slice(1)]}
-          onChange={onChange}
-          required
-        />
-        <SelectInput
-          label="Current Year"
-          name="current_year"
-          value={form.current_year}
-          options={[
-            { value: '', label: 'Select Year' },
-            { value: '1st', label: '1st Year' },
-            { value: '2nd', label: '2nd Year' },
-            { value: '3rd', label: '3rd Year' },
-            { value: '4th', label: '4th Year' }
-          ]}
-          onChange={onChange}
-          required
-        />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 min-h-[400px] border border-gray-200 dark:border-gray-700 p-4 rounded-lg">
+          <div className="border-r border-gray-200 dark:border-gray-700 pr-4">
+            <Input label="Student ID" name="id" value={form.id} onChange={onChange} required className="mb-4" />
+            <Input label="Name" name="name" value={form.name} onChange={onChange} required className="mb-4" />
+            <Input
+              label="Email"
+              name="email"
+              type="email"
+              value={form.email}
+              onChange={onChange}
+              required
+              className="mb-4"
+            />
+            <Input label="Phone" name="phone" value={form.phone} onChange={onChange} className="mb-4" />
+            <Input label="Address" name="address" value={form.address} onChange={onChange} className="mb-4" />
+            <Input label="PAN Number" name="pan_number" value={form.pan_number} onChange={onChange} className="mb-4" />
+          </div>
+          <div className="pl-4">
+            <Input label="Aadhar Number" name="aadhar_number" value={form.aadhar_number} onChange={onChange} className="mb-4" />
+            <Input label="Father's Phone" name="father_phone" value={form.father_phone} onChange={onChange} className="mb-4" />
+            <Input label="Mother's Phone" name="mother_phone" value={form.mother_phone} onChange={onChange} className="mb-4" />
+            {user.role === 'department' && (
+              <Input
+                label="Department"
+                value={deptOptions.find(d => d.value === selectedDept)?.label || ''}
+                disabled
+                className="mb-4 bg-gray-100 dark:bg-gray-800"
+              />
+            )}
+            <SelectInput
+              label="Batch"
+              name="batch_id"
+              value={form.batch_id}
+              options={[{ value: '', label: 'Select Batch' }, ...sectionOptions.slice(1)]}
+              onChange={onChange}
+              required
+              className="mb-4"
+            />
+            <SelectInput
+              label="Current Year"
+              name="current_year"
+              value={form.current_year}
+              options={[
+                { value: '', label: 'Select Year' },
+                { value: '1st', label: '1st Year' },
+                { value: '2nd', label: '2nd Year' },
+                { value: '3rd', label: '3rd Year' },
+                { value: '4th', label: '4th Year' }
+              ]}
+              onChange={onChange}
+              required
+              className="mb-4"
+            />
+          </div>
+        </div>
       </Modal>
 
       {/* Edit Student Modal */}
@@ -434,45 +495,61 @@ const StudentsPage: React.FC = () => {
           </>
         }
       >
-        <Input label="Name" name="name" value={form.name} onChange={onChange} required />
-        <Input
-          label="Email"
-          name="gmail"
-          type="email"
-          value={form.gmail}
-          onChange={onChange}
-          required
-        />
-        {user.role === 'department' && (
-          <Input
-            label="Department"
-            value={deptOptions.find(d => d.value === selectedDept)?.label || ''}
-            disabled
-            className="bg-gray-100 dark:bg-gray-800"
-          />
-        )}
-        <SelectInput
-          label="Batch"
-          name="batch_id"
-          value={form.batch_id}
-          options={[{ value: '', label: 'Select Batch' }, ...sectionOptions.slice(1)]}
-          onChange={onChange}
-          required
-        />
-        <SelectInput
-          label="Current Year"
-          name="current_year"
-          value={form.current_year}
-          options={[
-            { value: '', label: 'Select Year' },
-            { value: '1st', label: '1st Year' },
-            { value: '2nd', label: '2nd Year' },
-            { value: '3rd', label: '3rd Year' },
-            { value: '4th', label: '4th Year' }
-          ]}
-          onChange={onChange}
-          required
-        />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 min-h-[400px] border border-gray-200 dark:border-gray-700 p-4 rounded-lg">
+          <div className="border-r border-gray-200 dark:border-gray-700 pr-4">
+            <Input label="Student ID" name="id" value={form.id} disabled className="mb-4" />
+            <Input label="Name" name="name" value={form.name} onChange={onChange} required className="mb-4" />
+            <Input
+              label="Email"
+              name="email"
+              type="email"
+              value={form.email}
+              onChange={onChange}
+              required
+              className="mb-4"
+            />
+            <Input label="Phone" name="phone" value={form.phone} onChange={onChange} className="mb-4" />
+            <Input label="Address" name="address" value={form.address} onChange={onChange} className="mb-4" />
+            <Input label="PAN Number" name="pan_number" value={form.pan_number} onChange={onChange} className="mb-4" />
+          </div>
+          <div className="pl-4">
+            <Input label="Aadhar Number" name="aadhar_number" value={form.aadhar_number} onChange={onChange} className="mb-4" />
+            <Input label="Father's Phone" name="father_phone" value={form.father_phone} onChange={onChange} className="mb-4" />
+            <Input label="Mother's Phone" name="mother_phone" value={form.mother_phone} onChange={onChange} className="mb-4" />
+            {user.role === 'department' && (
+              <Input
+                label="Department"
+                value={deptOptions.find(d => d.value === selectedDept)?.label || ''}
+                disabled
+                className="mb-4 bg-gray-100 dark:bg-gray-800"
+              />
+            )}
+            <SelectInput
+              label="Batch"
+              name="batch_id"
+              value={form.batch_id}
+              options={[{ value: '', label: 'Select Batch' }, ...sectionOptions.slice(1)]}
+              onChange={onChange}
+              required
+              className="mb-4"
+            />
+            <SelectInput
+              label="Current Year"
+              name="current_year"
+              value={form.current_year}
+              options={[
+                { value: '', label: 'Select Year' },
+                { value: '1st', label: '1st Year' },
+                { value: '2nd', label: '2nd Year' },
+                { value: '3rd', label: '3rd Year' },
+                { value: '4th', label: '4th Year' }
+              ]}
+              onChange={onChange}
+              required
+              className="mb-4"
+            />
+          </div>
+        </div>
       </Modal>
 
       {/* Delete Student Modal */}

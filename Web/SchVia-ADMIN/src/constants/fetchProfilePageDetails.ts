@@ -1,13 +1,11 @@
 // src/api/fetchProfilePageDetails.ts
-
 export interface AdminProfile {
   id: number;
-  username: string;
-  gmail: string; 
-  role: 'super' | 'college' | 'department';
-  super_user_id: number | null;
-  super_full_name: string | null;
-  college_id: number | null;
+  name: string;
+  email: string;
+  contact_number: string;
+  role: 'college' | 'department' | 'class';
+  college_id: number;
   college_name: string | null;
   college_code: string | null;
   department_id: number | null;
@@ -31,11 +29,9 @@ export async function fetchProfilePageDetails(id: number): Promise<AdminProfile>
     throw new Error(`Failed to fetch profile: ${res.statusText}`);
   }
 
-  // 👇 pull out the JSON and log it
   const data = await res.json();
   console.log('fetchAdminProfile payload:', data);
 
-  // your backend should be returning { admin: { … } }
   if (!data.admin) {
     throw new Error('Unexpected payload shape — `admin` key missing');
   }
@@ -44,18 +40,23 @@ export async function fetchProfilePageDetails(id: number): Promise<AdminProfile>
 }
 
 /**
- * Update basic profile fields (e.g. username).
+ * Update basic profile fields.
  */
 export async function updateProfileDetails(
   id: number,
-  username: string,
-  gmail: string
+  name: string,
+  email: string,
+  contact_number?: string
 ): Promise<void> {
+  const body: any = { id, name, email };
+  if (contact_number) {
+    body.contact_number = contact_number;
+  }
   const res = await fetch(`${BASE}/updateAdminProfile`, {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id, username, gmail }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
     const { message } = await res.json();
@@ -75,7 +76,7 @@ export async function changePassword(
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id,currentPassword, newPassword }),
+    body: JSON.stringify({ id, currentPassword, newPassword }),
   });
   if (!res.ok) {
     const { message } = await res.json();

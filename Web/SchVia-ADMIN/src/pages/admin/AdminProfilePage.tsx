@@ -1,5 +1,4 @@
 // src/pages/AdminProfilePage.tsx
-
 import React, { useState, useEffect } from 'react';
 import { User, Key, Building2 } from 'lucide-react';
 import Card from '../../components/ui/Card';
@@ -24,27 +23,32 @@ const AdminProfilePage: React.FC = () => {
   const [profile, setProfile] = useState<AdminProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
   const [formData, setFormData] = useState({
-    username: '',
-    gmail: '',
+    name: '',
+    email: '',
+    contact_number: '',
     currentPassword: '',
     newPassword: '',
     confirmPassword: '',
   });
 
   useEffect(() => {
-    if (!user?.id) return;
+    if (!user?.id) {
+      setError('User ID not found');
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     fetchProfilePageDetails(user.id)
       .then((p) => {
         setProfile(p);
         setFormData((fd) => ({
           ...fd,
-          username: p.username,
-          gmail: p.gmail,
+          name: p.name,
+          email: p.email,
+          contact_number: p.contact_number || '',
         }));
       })
       .catch((err) => setError(err.message))
@@ -58,17 +62,22 @@ const AdminProfilePage: React.FC = () => {
 
   const handleUpdateProfile = async () => {
     try {
+      setError(null);
       await updateProfileDetails(
         user!.id,
-        formData.username,
-        formData.gmail
+        formData.name,
+        formData.email,
+        formData.contact_number || undefined
       );
       setProfile((p) =>
-        p && {
-          ...p,
-          username: formData.username,
-          gmail: formData.gmail,
-        }
+        p
+          ? {
+              ...p,
+              name: formData.name,
+              email: formData.email,
+              contact_number: formData.contact_number || 'N/A',
+            }
+          : p
       );
       setIsEditModalOpen(false);
     } catch (err: any) {
@@ -78,14 +87,18 @@ const AdminProfilePage: React.FC = () => {
 
   const handleUpdatePassword = async () => {
     if (formData.newPassword !== formData.confirmPassword) {
-      return setError('Passwords do not match.');
+      setError('Passwords do not match.');
+      return;
     }
     try {
-      await changePassword(
-        user!.id,
-        formData.currentPassword,
-        formData.newPassword
-      );
+      setError(null);
+      await changePassword(user!.id, formData.currentPassword, formData.newPassword);
+      setFormData((fd) => ({
+        ...fd,
+        currentPassword: '',
+        newPassword: '',
+        confirmPassword: '',
+      }));
       setIsPasswordModalOpen(false);
     } catch (err: any) {
       setError(err.message);
@@ -97,8 +110,7 @@ const AdminProfilePage: React.FC = () => {
   if (!profile) return <p>No profile data.</p>;
 
   const textColor = theme === 'light' ? 'text-[#333]' : 'text-[#E5E5E5]';
-  const subTextColor =
-    theme === 'light' ? 'text-[#666]' : 'text-[#A0A0A0]';
+  const subTextColor = theme === 'light' ? 'text-[#666]' : 'text-[#A0A0A0]';
 
   return (
     <div className="space-y-6">
@@ -130,41 +142,45 @@ const AdminProfilePage: React.FC = () => {
               <div className="flex-1 space-y-4">
                 <div>
                   <h2 className={`text-2xl font-bold ${textColor}`}>
-                    {profile.username}
+                    {profile.name}
                   </h2>
                   <p className={`text-sm ${subTextColor}`}>
                     {profile.role === 'college'
                       ? 'College Administrator'
-                      : 'Department Administrator'}
+                      : profile.role === 'department'
+                      ? 'Department Administrator'
+                      : 'Class Administrator'}
                   </p>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Username */}
+                  {/* Name */}
                   <div>
-                    <h3
-                      className={`text-sm font-medium ${subTextColor}`}
-                    >
-                      Username
+                    <h3 className={`text-sm font-medium ${subTextColor}`}>
+                      Name
                     </h3>
-                    <p className={textColor}>{profile.username}</p>
+                    <p className={textColor}>{profile.name}</p>
                   </div>
 
                   {/* Email */}
                   <div>
-                    <h3
-                      className={`text-sm font-medium ${subTextColor}`}
-                    >
+                    <h3 className={`text-sm font-medium ${subTextColor}`}>
                       Email
                     </h3>
-                    <p className={textColor}>{profile.gmail}</p>
+                    <p className={textColor}>{profile.email}</p>
+                  </div>
+
+                  {/* Contact Number */}
+                  <div>
+                    <h3 className={`text-sm font-medium ${subTextColor}`}>
+                      Contact Number
+                    </h3>
+                    <p className={textColor}>{profile.contact_number || 'N/A'}</p>
                   </div>
 
                   {profile.college_id != null && (
                     <div>
-                      <h3
-                        className={`text-sm font-medium ${subTextColor}`}
-                      >
+                      <h3 className={`text-sm font-medium ${subTextColor}`}>
                         College
                       </h3>
                       <p className={textColor}>
@@ -174,14 +190,11 @@ const AdminProfilePage: React.FC = () => {
                   )}
                   {profile.department_id != null && (
                     <div>
-                      <h3
-                        className={`text-sm font-medium ${subTextColor}`}
-                      >
+                      <h3 className={`text-sm font-medium ${subTextColor}`}>
                         Department
                       </h3>
                       <p className={textColor}>
-                        {profile.department_name} (
-                        {profile.department_code})
+                        {profile.department_name} ({profile.department_code})
                       </p>
                     </div>
                   )}
@@ -207,55 +220,28 @@ const AdminProfilePage: React.FC = () => {
             </div>
           </Card>
         </div>
-
-        {/* Access Details Card */}
-        <div>
-          <Card title="Access Details" className="h-full">
-            <div className="space-y-4">
-              <div className="flex items-center justify-between pb-2 border-b border-gray-200 dark:border-gray-700">
-                <span className={subTextColor}>Last Login</span>
-                <span className="font-medium">
-                  2025-03-15 10:30 AM
-                </span>
-              </div>
-              <div className="flex items-center justify-between pb-2 border-b border-gray-200 dark:border-gray-700">
-                <span className={subTextColor}>Account Created</span>
-                <span className="font-medium">2025-01-01</span>
-              </div>
-              <div className="flex items-center justify-between pb-2 border-b border-gray-200 dark:border-gray-700">
-                <span className={subTextColor}>
-                  Last Password Change
-                </span>
-                <span className="font-medium">2025-02-15</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className={subTextColor}>Two-Factor Auth</span>
-                <span className="font-medium text-[#FF4C4C]">
-                  Disabled
-                </span>
-              </div>
-            </div>
-          </Card>
-        </div>
       </div>
 
       {/* Edit Profile Modal */}
       <Modal
         isOpen={isEditModalOpen}
-        onClose={() => setIsEditModalOpen(false)}
+        onClose={() => {
+          setIsEditModalOpen(false);
+          setError(null);
+        }}
         title="Edit Profile"
         footer={
           <>
             <Button
               variant="outline"
-              onClick={() => setIsEditModalOpen(false)}
+              onClick={() => {
+                setIsEditModalOpen(false);
+                setError(null);
+              }}
             >
               Cancel
             </Button>
-            <Button
-              variant="primary"
-              onClick={handleUpdateProfile}
-            >
+            <Button variant="primary" onClick={handleUpdateProfile}>
               Save Changes
             </Button>
           </>
@@ -263,19 +249,25 @@ const AdminProfilePage: React.FC = () => {
       >
         <div className="space-y-4">
           <Input
-            label="Username"
-            name="username"
-            value={formData.username}
+            label="Name"
+            name="name"
+            value={formData.name}
             onChange={handleInputChange}
             required
           />
           <Input
             label="Email"
-            name="gmail"
+            name="email"
             type="email"
-            value={formData.gmail}
+            value={formData.email}
             onChange={handleInputChange}
             required
+          />
+          <Input
+            label="Contact Number"
+            name="contact_number"
+            value={formData.contact_number}
+            onChange={handleInputChange}
           />
         </div>
       </Modal>
@@ -283,20 +275,23 @@ const AdminProfilePage: React.FC = () => {
       {/* Change Password Modal */}
       <Modal
         isOpen={isPasswordModalOpen}
-        onClose={() => setIsPasswordModalOpen(false)}
+        onClose={() => {
+          setIsPasswordModalOpen(false);
+          setError(null);
+        }}
         title="Change Password"
         footer={
           <>
             <Button
               variant="outline"
-              onClick={() => setIsPasswordModalOpen(false)}
+              onClick={() => {
+                setIsPasswordModalOpen(false);
+                setError(null);
+              }}
             >
               Cancel
             </Button>
-            <Button
-              variant="primary"
-              onClick={handleUpdatePassword}
-            >
+            <Button variant="primary" onClick={handleUpdatePassword}>
               Update Password
             </Button>
           </>

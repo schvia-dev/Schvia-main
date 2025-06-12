@@ -22,7 +22,7 @@ const DepartmentsPage: React.FC = () => {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Modals & form state (only for college admins)
+  // Modals & form state
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -30,8 +30,10 @@ const DepartmentsPage: React.FC = () => {
   const [deptCode, setDeptCode] = useState('');
   const [deptName, setDeptName] = useState('');
 
-  // Check if user is a department or class admin
-  const isRestrictedAdmin = user?.role === 'department_admin' || user?.role === 'class_admin';
+  // Check user role
+  const isCollegeAdmin = user?.role === 'college';
+  const isDepartmentAdmin = user?.role === 'department';
+  const isClassAdmin = user?.role === 'class';
 
   // Load departments
   useEffect(() => {
@@ -44,7 +46,7 @@ const DepartmentsPage: React.FC = () => {
       try {
         const data = await getDepartments(searchQuery, collegeId);
         // Filter for department/class admin's department
-        const filteredData = isRestrictedAdmin
+        const filteredData = (isDepartmentAdmin || isClassAdmin)
           ? data.filter((dept: Department) => dept.id === user.department_id)
           : data;
         setDepartments(filteredData);
@@ -55,11 +57,11 @@ const DepartmentsPage: React.FC = () => {
     };
 
     load();
-  }, [searchQuery, user?.college_id, user?.department_id, isRestrictedAdmin]);
+  }, [searchQuery, user?.college_id, user?.department_id, isDepartmentAdmin, isClassAdmin]);
 
   // Add (only for college admins)
   const handleAdd = async () => {
-    if (isRestrictedAdmin || !deptCode || !deptName || !user?.college_id) return;
+    if (!isCollegeAdmin || !deptCode || !deptName || !user?.college_id) return;
     try {
       const newDept = await addDepartment(deptCode, deptName, user.college_id);
       setDepartments(prev => [...prev, newDept]);
@@ -72,9 +74,10 @@ const DepartmentsPage: React.FC = () => {
     }
   };
 
-  // Edit (only for college admins)
+  // Edit (for college admins or department admins editing their own department)
   const handleEdit = async () => {
-    if (isRestrictedAdmin || !selectedDepartment) return;
+    if (!selectedDepartment) return;
+    if (!isCollegeAdmin && !(isDepartmentAdmin && selectedDepartment.id === user?.department_id)) return;
     try {
       await updateDepartment(selectedDepartment.id, deptCode, deptName);
       setDepartments(prev =>
@@ -94,7 +97,7 @@ const DepartmentsPage: React.FC = () => {
 
   // Delete (only for college admins)
   const handleDelete = async () => {
-    if (isRestrictedAdmin || !selectedDepartment) return;
+    if (!isCollegeAdmin || !selectedDepartment) return;
     try {
       await deleteDepartment(selectedDepartment.id);
       setDepartments(prev => prev.filter(d => d.id !== selectedDepartment.id));
@@ -107,7 +110,7 @@ const DepartmentsPage: React.FC = () => {
   };
 
   const openEditModal = (dept: Department) => {
-    if (isRestrictedAdmin) return;
+    if (!isCollegeAdmin && !(isDepartmentAdmin && dept.id === user?.department_id)) return;
     setSelectedDepartment(dept);
     setDeptCode(dept.dept_code);
     setDeptName(dept.name);
@@ -115,12 +118,12 @@ const DepartmentsPage: React.FC = () => {
   };
 
   const openDeleteModal = (dept: Department) => {
-    if (isRestrictedAdmin) return;
+    if (!isCollegeAdmin) return;
     setSelectedDepartment(dept);
     setIsDeleteModalOpen(true);
   };
 
-  // Table columns (hide Actions column for department/class admins)
+  // Table columns
   const columns = [
     {
       header: 'Department Code',
@@ -154,34 +157,34 @@ const DepartmentsPage: React.FC = () => {
         </Badge>
       ),
     },
-    ...(isRestrictedAdmin
-      ? []
-      : [
-          {
-            header: 'Actions',
-            accessor: (row: Department) => (
-              <div className="flex items-center space-x-2" onClick={(e) => e.stopPropagation()}>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  icon={<Edit size={14} />}
-                  onClick={() => openEditModal(row)}
-                >
-                  Edit
-                </Button>
-                <Button
-                  variant="danger"
-                  size="sm"
-                  icon={<Trash2 size={14} />}
-                  onClick={() => openDeleteModal(row)}
-                >
-                  Delete
-                </Button>
-              </div>
-            ),
-            className: 'w-44',
-          },
-        ]),
+    {
+      header: 'Actions',
+      accessor: (row: Department) => (
+        <div className="flex items-center space-x-2" onClick={(e) => e.stopPropagation()}>
+          {(isCollegeAdmin || (isDepartmentAdmin && row.id === user?.department_id)) && (
+            <Button
+              variant="outline"
+              size="sm"
+              icon={<Edit size={14} />}
+              onClick={() => openEditModal(row)}
+            >
+              Edit
+            </Button>
+          )}
+          {isCollegeAdmin && (
+            <Button
+              variant="danger"
+              size="sm"
+              icon={<Trash2 size={14} />}
+              onClick={() => openDeleteModal(row)}
+            >
+              Delete
+            </Button>
+          )}
+        </div>
+      ),
+      className: 'w-44',
+    },
   ];
 
   return (
@@ -189,7 +192,7 @@ const DepartmentsPage: React.FC = () => {
       {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Departments</h1>
-        {!isRestrictedAdmin && (
+        {isCollegeAdmin && (
           <div className="flex space-x-2">
             <Button variant="outline" icon={<Download size={16} />}>
               Export
@@ -208,10 +211,10 @@ const DepartmentsPage: React.FC = () => {
         )}
       </div>
 
-      {/* Search & Count (hide search for department/class admins) */}
+      {/* Search & Count */}
       <Card>
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4">
-          {!isRestrictedAdmin && (
+          {isCollegeAdmin && (
             <SearchInput
               placeholder="Search departments..."
               value={searchQuery}
@@ -219,7 +222,7 @@ const DepartmentsPage: React.FC = () => {
             />
           )}
           <span className="mt-2 sm:mt-0 text-sm">
-            Total: <strong>{departments.length}</strong> {isRestrictedAdmin ? 'department' : 'departments'}
+            Total: <strong>{departments.length}</strong> {(isDepartmentAdmin || isClassAdmin) ? 'department' : 'departments'}
           </span>
         </div>
 
@@ -233,7 +236,7 @@ const DepartmentsPage: React.FC = () => {
       </Card>
 
       {/* Add Modal (only for college admins) */}
-      {!isRestrictedAdmin && (
+      {isCollegeAdmin && (
         <Modal
           isOpen={isAddModalOpen}
           onClose={() => setIsAddModalOpen(false)}
@@ -266,8 +269,8 @@ const DepartmentsPage: React.FC = () => {
         </Modal>
       )}
 
-      {/* Edit Modal (only for college admins) */}
-      {!isRestrictedAdmin && (
+      {/* Edit Modal (for college or department admins) */}
+      {(isCollegeAdmin || isDepartmentAdmin) && (
         <Modal
           isOpen={isEditModalOpen}
           onClose={() => setIsEditModalOpen(false)}
@@ -299,7 +302,7 @@ const DepartmentsPage: React.FC = () => {
       )}
 
       {/* Delete Modal (only for college admins) */}
-      {!isRestrictedAdmin && (
+      {isCollegeAdmin && (
         <Modal
           isOpen={isDeleteModalOpen}
           onClose={() => setIsDeleteModalOpen(false)}
@@ -318,7 +321,7 @@ const DepartmentsPage: React.FC = () => {
           <p>
             Are you sure you want to delete <strong>{selectedDepartment?.name}</strong>?
           </p>
-          <p className="mt-2 text-[#FF4C4C]">This cannot be undone.</p>
+          <p className="mt-2 text-[#FF3333]">This cannot be undone.</p>
         </Modal>
       )}
     </div>

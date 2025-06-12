@@ -1,4 +1,19 @@
-import { Department, Section } from '../types';
+export const fetchBatchYearOptions = async (
+  college_id: number
+): Promise<{ value: string; label: string }[]> => {
+  const res = await fetch(`/web/fetchbatchyears?college_id=${college_id}`);
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || 'Could not fetch batch years');
+  }
+  const { batchYears } = await res.json();
+  return batchYears.map((y: number) => ({
+    value: String(y),
+    label: String(y),
+  }));
+};
+
+import { Department, Batch } from '../types';
 
 const BASE = '/web';
 
@@ -53,7 +68,7 @@ export async function fetchSectionOptions(
 
     const res = await fetch(`${BASE}/fetchbatches?${params}`, { headers });
     if (!res.ok) throw new Error('Could not load sections');
-    const { batches } = await res.json() as { batches: Section[] };
+    const { batches } = await res.json() as { batches: Batch[] };
     return batches.length
       ? batches.map(b => ({
           value: String(b.id),

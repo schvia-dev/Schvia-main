@@ -1,4 +1,3 @@
-
 import { Department } from '../types';
 
 export const getDepartments = (
@@ -64,5 +63,8 @@ export const deleteDepartment = async (id: number): Promise<void> => {
   const res = await fetch(`/web/deletedepartment/${id}`, {
     method: 'DELETE',
   });
-  if (!res.ok) throw new Error('Could not delete department');
+  if (!res.ok) {
+    const result = await res.json();
+    throw new Error(result.message || 'Could not delete department');
+  }
 };

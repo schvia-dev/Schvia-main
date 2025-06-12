@@ -26,7 +26,14 @@ import {
   DepartmentAdmin,
 } from '../../constants/fetchDepartmentAdmins';
 
-import { fetchDepartmentOptions } from '../../constants/fetchSectionsFilters'; 
+import { fetchDepartmentOptions } from '../../constants/fetchSectionsFilters';
+
+// Define TableColumn type for the Table component
+interface TableColumn<T> {
+  header: string;
+  accessor: (row: T) => React.ReactNode;
+  className?: string;
+}
 
 const AdminManagementPage: React.FC = () => {
   const { user } = useAuth();
@@ -46,12 +53,10 @@ const AdminManagementPage: React.FC = () => {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-  const [selectedAdmin, setSelectedAdmin] = useState<DepartmentAdmin | null>(
-    null
-  );
+  const [selectedAdmin, setSelectedAdmin] = useState<DepartmentAdmin | null>(null);
   const [formData, setFormData] = useState({
-    username: '',
-    gmail: '',
+    name: '',
+    email: '',
     password: '',
     department_id: '',
   });
@@ -61,11 +66,10 @@ const AdminManagementPage: React.FC = () => {
     fetchDepartmentOptions(collegeId)
       .then((opts: { value: string; label: string }[]) =>
         setDepartmentOptions([{ value: '', label: 'All Departments' }, ...opts])
-    )
-    .catch((err: any) => setError(err.message));
+      )
+      .catch((err: any) => setError(err.message));
   }, [collegeId]);
-  
-  console.log(departmentOptions);
+
   const loadAdmins = () => {
     setLoading(true);
     fetchDepartmentAdmins(collegeId)
@@ -78,8 +82,8 @@ const AdminManagementPage: React.FC = () => {
   const filtered = admins.filter((a) => {
     const term = searchQuery.toLowerCase();
     const textMatch =
-      a.username.toLowerCase().includes(term) ||
-      a.gmail.toLowerCase().includes(term) ||
+      a.name.toLowerCase().includes(term) ||
+      a.email.toLowerCase().includes(term) ||
       a.department_name.toLowerCase().includes(term);
     const deptMatch =
       selectedDepartment === '' ||
@@ -95,10 +99,9 @@ const AdminManagementPage: React.FC = () => {
 
   const handleAdd = () => {
     addDepartmentAdmin({
-      username: formData.username,
-      gmail: formData.gmail,
+      name: formData.name,
+      email: formData.email,
       password: formData.password,
-      super_user_id: user!.super_user_id,  
       college_id: collegeId,
       department_id: Number(formData.department_id),
     })
@@ -112,8 +115,8 @@ const AdminManagementPage: React.FC = () => {
   const handleEdit = () => {
     if (!selectedAdmin) return;
     editDepartmentAdmin(selectedAdmin.id, {
-      username: formData.username,
-      gmail: formData.gmail,
+      name: formData.name,
+      email: formData.email,
       department_id: Number(formData.department_id),
       password: formData.password || undefined,
     })
@@ -136,13 +139,13 @@ const AdminManagementPage: React.FC = () => {
 
   const columns: TableColumn<DepartmentAdmin>[] = [
     {
-      header: 'Username',
-      accessor: (row: DepartmentAdmin) => row.username,
+      header: 'Name',
+      accessor: (row: DepartmentAdmin) => row.name,
       className: 'font-medium',
     },
     {
       header: 'Email',
-      accessor: (row: DepartmentAdmin) => row.gmail,
+      accessor: (row: DepartmentAdmin) => row.email,
     },
     {
       header: 'Department',
@@ -150,10 +153,10 @@ const AdminManagementPage: React.FC = () => {
     },
     {
       header: 'Role',
-      accessor: (_row: DepartmentAdmin) => (
+      accessor: (row: DepartmentAdmin) => (
         <Badge variant="primary" size="sm">
-          <span className=" text-[#6A5ACD] dark:text-[#1a1a40 ]">
-            Department Admin
+          <span className="text-[#6A5ACD] dark:text-[#1a1a40]">
+            {row.role === 'department' ? 'Department Admin' : 'Class Admin'}
           </span>
         </Badge>
       ),
@@ -169,8 +172,8 @@ const AdminManagementPage: React.FC = () => {
             onClick={() => {
               setSelectedAdmin(row);
               setFormData({
-                username: row.username,
-                gmail: row.gmail,
+                name: row.name,
+                email: row.email,
                 password: '',
                 department_id: row.department_id.toString(),
               });
@@ -212,8 +215,8 @@ const AdminManagementPage: React.FC = () => {
             icon={<PlusCircle size={16} />}
             onClick={() => {
               setFormData({
-                username: '',
-                gmail: '',
+                name: '',
+                email: '',
                 password: '',
                 department_id: '',
               });
@@ -274,17 +277,17 @@ const AdminManagementPage: React.FC = () => {
       >
         <div className="space-y-4">
           <Input
-            label="Username"
-            name="username"
-            value={formData.username}
+            label="Name"
+            name="name"
+            value={formData.name}
             onChange={handleInputChange}
             required
           />
           <Input
             label="Email"
-            name="gmail"
+            name="email"
             type="email"
-            value={formData.gmail}
+            value={formData.email}
             onChange={handleInputChange}
             required
           />
@@ -325,17 +328,17 @@ const AdminManagementPage: React.FC = () => {
       >
         <div className="space-y-4">
           <Input
-            label="Username"
-            name="username"
-            value={formData.username}
+            label="Name"
+            name="name"
+            value={formData.name}
             onChange={handleInputChange}
             required
           />
           <Input
             label="Email"
-            name="gmail"
+            name="email"
             type="email"
-            value={formData.gmail}
+            value={formData.email}
             onChange={handleInputChange}
             required
           />
@@ -374,7 +377,7 @@ const AdminManagementPage: React.FC = () => {
         }
       >
         <p>
-          Are you sure you want to delete <strong>{selectedAdmin?.username}</strong>?
+          Are you sure you want to delete <strong>{selectedAdmin?.name}</strong>?
         </p>
         <p className="mt-2 text-red-600">
           This action cannot be undone.
