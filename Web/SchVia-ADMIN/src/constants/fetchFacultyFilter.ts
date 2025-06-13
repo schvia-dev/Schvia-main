@@ -1,5 +1,3 @@
-// src/constants/fetchFacultyFilter.ts
-
 export interface Option {
   value: string;
   label: string;

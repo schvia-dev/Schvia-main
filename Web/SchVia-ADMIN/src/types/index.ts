@@ -111,14 +111,14 @@ export interface Subject {
 export interface Period {
   id: number;
   batch_id: number;
-  time_slot: string;
   name: string;
+  time: string; // Changed from time_slot to time to match frontend and backend response
 }
 
 export interface TimetableEntry {
   id: number;
   batch_id: number;
-  weekday: 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday' | 'Sunday';
+  weekday: string;
   period_id: number;
   subject_id: number;
   semester_no: number;
@@ -165,4 +165,9 @@ export interface AttendanceData {
   present: number;
   absent: number;
   leave: number;
+}
+
+export interface Option {
+  value: string | number;
+  label: string;
 }

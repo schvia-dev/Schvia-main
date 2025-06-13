@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   PlusCircle,
   Download,
@@ -40,13 +41,16 @@ const isValidEmail = (email: string): boolean => {
 
 const StudentsPage: React.FC = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const collegeId = user?.college_id;
+  const role = user?.role;
+  const departmentId = user?.department_id ?? null;
   if (!collegeId || !user) return null;
 
   // Filters & data
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDept, setSelectedDept] = useState(
-    user.role === 'department' && user.department_id ? String(user.department_id) : ''
+    role === 'department' && departmentId ? String(departmentId) : ''
   );
   const [selectedBatch, setSelectedBatch] = useState('');
   const [students, setStudents] = useState<Student[]>([]);
@@ -86,7 +90,7 @@ const StudentsPage: React.FC = () => {
       try {
         const depts = await fetchDepartmentOptions(collegeId, user);
         setDeptOptions(
-          user.role === 'department' ? depts : [{ value: '', label: 'All Departments' }, ...depts]
+          role === 'department' ? depts : [{ value: '', label: 'All Departments' }, ...depts]
         );
         const batches = await fetchSectionOptions(collegeId, user, selectedDept);
         setSectionOptions([{ value: '', label: 'All Batches' }, ...batches]);
@@ -254,17 +258,15 @@ const StudentsPage: React.FC = () => {
   const handleReset = async () => {
     if (!selected) return;
     try {
-      const headers: HeadersInit = { 'Content-Type': 'application/json' };
-      if (user.token) {
-        headers['Authorization'] = `Bearer ${user.token}`;
-      }
       const res = await fetch('/web/studentForgotPassword', {
         method: 'POST',
-        headers,
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({ rollNo: selected.id })
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.message);
+      if (!res.ok) throw new Error(data.message || 'Failed to reset password');
       setIsResetOpen(false);
       setNotify({ type: 'success', message: data.message });
     } catch (e: any) {
@@ -303,7 +305,12 @@ const StudentsPage: React.FC = () => {
       header: 'Actions',
       accessor: (r: Student) => (
         <div className="flex items-center space-x-2" onClick={e => e.stopPropagation()}>
-          <Button variant="outline" size="sm" icon={<Eye size={14} />}>
+          <Button
+            variant="outline"
+            size="sm"
+            icon={<Eye size={14} />}
+            onClick={() => navigate(`/students/${r.id}`)}
+          >
             View
           </Button>
           <Button
@@ -336,21 +343,12 @@ const StudentsPage: React.FC = () => {
     }
   ];
 
-  // Debug modal rendering
-  useEffect(() => {
-    if (isAddOpen) {
-      console.log('Add Student Modal Opened. Form state:', form);
-      console.log('Section Options:', sectionOptions);
-      console.log('User Role:', user.role, 'Selected Dept:', selectedDept);
-    }
-  }, [isAddOpen, form, sectionOptions, user.role, selectedDept]);
-
   return (
     <div className="space-y-6 p-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">
-          Students {user.role === 'department' && deptOptions.length > 0 ? ` - ${deptOptions[0].label}` : ''}
+        <h1 className="text-2xl font-bold text-headings">
+          Students {role === 'department' && deptOptions.length > 0 ? ` - ${deptOptions[0].label}` : ''}
         </h1>
         <div className="flex space-x-2">
           <Button variant="outline" icon={<Download size={16} />}>
@@ -367,20 +365,13 @@ const StudentsPage: React.FC = () => {
 
       {/* Filters */}
       <Card>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
           <SearchInput
             placeholder="Search name or ID..."
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
           />
-          {user.role === 'department' ? (
-            <Input
-              label="Department"
-              value={deptOptions.find(d => d.value === selectedDept)?.label || ''}
-              disabled
-              className="bg-gray-100 dark:bg-gray-800"
-            />
-          ) : (
+          {role !== 'department' && (
             <SelectInput
               label="Department"
               placeholder="All Departments"
@@ -398,8 +389,8 @@ const StudentsPage: React.FC = () => {
             onChange={e => setSelectedBatch(e.target.value)}
           />
           <div className="flex items-end">
-            <span className="text-sm">
-              Total: <strong>{students.length}</strong> students
+            <span className="text-sm text-text-secondary">
+              Total: <strong className="text-text-primary">{students.length}</strong> students
             </span>
           </div>
         </div>
@@ -443,10 +434,10 @@ const StudentsPage: React.FC = () => {
             <Input label="Aadhar Number" name="aadhar_number" value={form.aadhar_number} onChange={onChange} className="mb-4" />
             <Input label="Father's Phone" name="father_phone" value={form.father_phone} onChange={onChange} className="mb-4" />
             <Input label="Mother's Phone" name="mother_phone" value={form.mother_phone} onChange={onChange} className="mb-4" />
-            {user.role === 'department' && (
+            {role === 'department' && deptOptions.length > 0 && (
               <Input
                 label="Department"
-                value={deptOptions.find(d => d.value === selectedDept)?.label || ''}
+                value={deptOptions[0].label}
                 disabled
                 className="mb-4 bg-gray-100 dark:bg-gray-800"
               />
@@ -516,10 +507,10 @@ const StudentsPage: React.FC = () => {
             <Input label="Aadhar Number" name="aadhar_number" value={form.aadhar_number} onChange={onChange} className="mb-4" />
             <Input label="Father's Phone" name="father_phone" value={form.father_phone} onChange={onChange} className="mb-4" />
             <Input label="Mother's Phone" name="mother_phone" value={form.mother_phone} onChange={onChange} className="mb-4" />
-            {user.role === 'department' && (
+            {role === 'department' && deptOptions.length > 0 && (
               <Input
                 label="Department"
-                value={deptOptions.find(d => d.value === selectedDept)?.label || ''}
+                value={deptOptions[0].label}
                 disabled
                 className="mb-4 bg-gray-100 dark:bg-gray-800"
               />
@@ -606,7 +597,7 @@ const StudentsPage: React.FC = () => {
       <Modal
         isOpen={!!notify}
         onClose={() => setNotify(null)}
-        title={notify?.type === 'success' ? 'Success' : notify?.type === 'error' ? 'Warning' : 'Warning'}
+        title={notify?.type === 'success' ? 'Success' : notify?.type === 'error' ? 'Error' : 'Warning'}
         footer={
           <Button variant="primary" onClick={() => setNotify(null)}>
             OK

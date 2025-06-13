@@ -1,6 +1,5 @@
-// src/pages/SubjectsPage.tsx
 import React, { useEffect, useState } from 'react';
-import { PlusCircle, Download, Upload, Edit, Trash2, Key } from 'lucide-react';
+import { PlusCircle, Download, Upload, Edit, Trash2 } from 'lucide-react';
 import Table from '../../components/ui/Table';
 import Button from '../../components/ui/Button';
 import Modal from '../../components/ui/Modal';
@@ -16,7 +15,7 @@ import {
   updateSubject,
   deleteSubject
 } from '../../constants/fetchSubjectDetails';
-import { fetchDepartmentOptions, fetchSemesterOptions } from '../../constants/fetchSubjectFilters';
+import { fetchDepartmentOptions } from '../../constants/fetchSubjectFilters';
 
 interface Subject {
   id: number;
@@ -24,21 +23,27 @@ interface Subject {
   name: string;
   department_id: number;
   department_name: string;
-  semester_no: number;
+  credits: number;
   faculty_count: number;
+}
+
+interface DepartmentOption {
+  value: string;
+  label: string;
 }
 
 const SubjectsPage: React.FC = () => {
   const { user } = useAuth();
   const collegeId = user?.college_id;
-  if (!collegeId) return null;
+  const userRole = user?.role;
+  const departmentId = user?.department_id;
+
+  if (!collegeId) return <div>No college ID found.</div>;
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDepartment, setSelectedDepartment] = useState('');
-  const [selectedSemester, setSelectedSemester] = useState('');
   const [subjects, setSubjects] = useState<Subject[]>([]);
-  const [deptOptions, setDeptOptions] = useState<{ value: string; label: string }[]>([]);
-  const [semesterOptions, setSemesterOptions] = useState<{ value: string; label: string }[]>([]);
+  const [deptOptions, setDeptOptions] = useState<DepartmentOption[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [notify, setNotify] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
@@ -50,27 +55,43 @@ const SubjectsPage: React.FC = () => {
   const [form, setForm] = useState({
     subject_code: '',
     name: '',
-    department_id: '',
-    semester_no: ''
+    credits: ''
   });
 
   useEffect(() => {
     (async () => {
-      const depts = await fetchDepartmentOptions(collegeId);
-      const sems = await fetchSemesterOptions();
-      setDeptOptions([{ value: '', label: 'All Departments' }, ...depts]);
-      setSemesterOptions([{ value: '', label: 'All Semesters' }, ...sems]);
+      if (userRole === 'department') {
+        if (departmentId == null) {
+          setNotify({ type: 'error', message: 'Department ID is missing for department admin.' });
+          return;
+        }
+        // Department admins see only their department
+        const depts = await fetchDepartmentOptions(collegeId);
+        const userDept = depts.find((d: DepartmentOption) => d.value === String(departmentId));
+        if (userDept) {
+          setDeptOptions([userDept]);
+          setSelectedDepartment(String(departmentId));
+        } else {
+          setNotify({ type: 'error', message: 'Invalid department ID for department admin.' });
+        }
+      } else {
+        // College admins see all departments
+        const depts = await fetchDepartmentOptions(collegeId);
+        setDeptOptions([{ value: '', label: 'All Departments' }, ...depts]);
+      }
     })();
-  }, [collegeId]);
+  }, [collegeId, userRole, departmentId]);
 
   useEffect(() => {
     (async () => {
       setIsLoading(true);
-      const data = await getSubjects(collegeId, searchQuery, selectedDepartment, selectedSemester);
+      const deptFilter = userRole === 'department' ? String(departmentId) : selectedDepartment;
+      const deptIdParam = userRole === 'department' && departmentId != null ? departmentId : undefined;
+      const data = await getSubjects(collegeId, searchQuery, deptFilter, deptIdParam);
       setSubjects(data);
       setIsLoading(false);
     })();
-  }, [collegeId, searchQuery, selectedDepartment, selectedSemester]);
+  }, [collegeId, searchQuery, selectedDepartment, userRole, departmentId]);
 
   const onChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -78,7 +99,7 @@ const SubjectsPage: React.FC = () => {
   };
 
   const openAdd = () => {
-    setForm({ subject_code: '', name: '', department_id: '', semester_no: '' });
+    setForm({ subject_code: '', name: '', credits: '' });
     setIsAddOpen(true);
   };
 
@@ -87,9 +108,9 @@ const SubjectsPage: React.FC = () => {
     setForm({
       subject_code: subject.subject_code,
       name: subject.name,
-      department_id: String(subject.department_id),
-      semester_no: String(subject.semester_no)
+      credits: String(subject.credits)
     });
+    setSelectedDepartment(String(subject.department_id)); // Ensure department is pre-selected
     setIsEditOpen(true);
   };
 
@@ -99,13 +120,27 @@ const SubjectsPage: React.FC = () => {
   };
 
   const handleAdd = async () => {
-    const { subject_code, name, department_id, semester_no } = form;
-    if (!subject_code || !name || !department_id || !semester_no) {
+    const { subject_code, name, credits } = form;
+    if (!subject_code || !name || !credits) {
       setNotify({ type: 'error', message: 'Please fill all fields.' });
       return;
     }
     try {
-      const newSubject = await addSubject(collegeId, subject_code, name, parseInt(department_id), parseInt(semester_no));
+      let deptId: number;
+      if (userRole === 'department') {
+        if (departmentId == null) {
+          setNotify({ type: 'error', message: 'Department ID is missing.' });
+          return;
+        }
+        deptId = departmentId;
+      } else {
+        deptId = parseInt(selectedDepartment || deptOptions.find(d => d.value !== '')?.value || '0');
+        if (!deptId) {
+          setNotify({ type: 'error', message: 'Please select a department.' });
+          return;
+        }
+      }
+      const newSubject = await addSubject(collegeId, subject_code, name, deptId, parseInt(credits));
       setSubjects(prev => [...prev, newSubject]);
       setIsAddOpen(false);
       setNotify({ type: 'success', message: 'Subject added successfully.' });
@@ -116,13 +151,31 @@ const SubjectsPage: React.FC = () => {
 
   const handleEdit = async () => {
     if (!selected) return;
-    const { subject_code, name, department_id, semester_no } = form;
+    const { subject_code, name, credits } = form;
+    if (!subject_code || !name || !credits) {
+      setNotify({ type: 'error', message: 'Please fill all fields.' });
+      return;
+    }
     try {
-      const updated = await updateSubject(selected.id, {
+      let deptId: number;
+      if (userRole === 'department') {
+        if (departmentId == null) {
+          setNotify({ type: 'error', message: 'Department ID is missing.' });
+          return;
+        }
+        deptId = departmentId;
+      } else {
+        deptId = parseInt(selectedDepartment || String(selected.department_id));
+        if (!deptId) {
+          setNotify({ type: 'error', message: 'Please select a department.' });
+          return;
+        }
+      }
+      const updated = await updateSubject(selected.id, collegeId, {
         subject_code,
         name,
-        department_id: parseInt(department_id),
-        semester_no: parseInt(semester_no),
+        department_id: deptId,
+        credits: parseInt(credits),
       });
       setSubjects(prev => prev.map(s => (s.id === updated.id ? updated : s)));
       setIsEditOpen(false);
@@ -135,7 +188,8 @@ const SubjectsPage: React.FC = () => {
   const handleDelete = async () => {
     if (!selected) return;
     try {
-      await deleteSubject(selected.id);
+      const deptIdParam = userRole === 'department' && departmentId != null ? departmentId : undefined;
+      await deleteSubject(selected.id, collegeId, deptIdParam);
       setSubjects(prev => prev.filter(s => s.id !== selected.id));
       setIsDelOpen(false);
       setNotify({ type: 'success', message: 'Subject deleted successfully.' });
@@ -148,18 +202,17 @@ const SubjectsPage: React.FC = () => {
     { header: 'Subject Code', accessor: (r: Subject) => r.subject_code },
     { header: 'Subject Name', accessor: (r: Subject) => r.name },
     { header: 'Department', accessor: (r: Subject) => r.department_name },
-    { header: 'Semester', accessor: (r: Subject) => 
-    <Badge variant="primary" size="sm">
-      <span className=" text-[#6A5ACD] dark:text-[#1a1a40 ]">
-        Semester {r.semester_no}
-        </span>
-    </Badge> },
-    { header: 'Faculties', accessor: (r: Subject) => 
-    <Badge variant="primary" size="sm"> 
-    <span className=" text-[#6A5ACD] dark:text-[#1a1a40 ]">
-        {r.faculty_count} 
-        </span>
-        </Badge> },
+    { header: 'Credits', accessor: (r: Subject) => r.credits },
+    {
+      header: 'Faculties',
+      accessor: (r: Subject) => (
+        <Badge variant="primary" size="sm">
+          <span className="text-[#6A5ACD] dark:text-[#1a1a40]">
+            {r.faculty_count}
+          </span>
+        </Badge>
+      )
+    },
     {
       header: 'Actions',
       accessor: (r: Subject) => (
@@ -186,10 +239,16 @@ const SubjectsPage: React.FC = () => {
 
       {/* Filters */}
       <Card>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
           <SearchInput placeholder="Search subjects..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
-          <SelectInput placeholder="Select Department" options={deptOptions} value={selectedDepartment} onChange={e => setSelectedDepartment(e.target.value)} />
-          <SelectInput placeholder="Select Semester" options={semesterOptions} value={selectedSemester} onChange={e => setSelectedSemester(e.target.value)} />
+          {userRole !== 'department' && (
+            <SelectInput
+              placeholder="Select Department"
+              options={deptOptions}
+              value={selectedDepartment}
+              onChange={e => setSelectedDepartment(e.target.value)}
+            />
+          )}
           <div className="flex items-end"><span>Total: <strong>{subjects.length}</strong></span></div>
         </div>
         <Table columns={columns} data={subjects} keyField="id" isLoading={isLoading} />
@@ -204,8 +263,17 @@ const SubjectsPage: React.FC = () => {
       }>
         <Input label="Subject Code" name="subject_code" value={form.subject_code} onChange={onChange} required />
         <Input label="Name" name="name" value={form.name} onChange={onChange} required />
-        <SelectInput label="Department" name="department_id" options={deptOptions} value={form.department_id} onChange={onChange} required />
-        <SelectInput label="Semester" name="semester_no" options={semesterOptions} value={form.semester_no} onChange={onChange} required />
+        {userRole !== 'department' && (
+          <SelectInput
+            label="Department"
+            name="department_id"
+            options={deptOptions.filter(d => d.value !== '')}
+            value={selectedDepartment}
+            onChange={e => setSelectedDepartment(e.target.value)}
+            required
+          />
+        )}
+        <Input label="Credits" name="credits" type="number" value={form.credits} onChange={onChange} required />
       </Modal>
 
       {/* Edit Modal */}
@@ -217,8 +285,17 @@ const SubjectsPage: React.FC = () => {
       }>
         <Input label="Subject Code" name="subject_code" value={form.subject_code} onChange={onChange} required />
         <Input label="Name" name="name" value={form.name} onChange={onChange} required />
-        <SelectInput label="Department" name="department_id" options={deptOptions} value={form.department_id} onChange={onChange} required />
-        <SelectInput label="Semester" name="semester_no" options={semesterOptions} value={form.semester_no} onChange={onChange} required />
+        {userRole !== 'department' && (
+          <SelectInput
+            label="Department"
+            name="department_id"
+            options={deptOptions.filter(d => d.value !== '')}
+            value={selectedDepartment}
+            onChange={e => setSelectedDepartment(e.target.value)}
+            required
+          />
+        )}
+        <Input label="Credits" name="credits" type="number" value={form.credits} onChange={onChange} required />
       </Modal>
 
       {/* Delete Confirmation Modal */}

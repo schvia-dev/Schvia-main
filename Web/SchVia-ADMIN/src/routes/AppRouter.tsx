@@ -6,7 +6,9 @@ import ForgotPasswordPage from '../pages/auth/ForgotPasswordPage';
 import DashboardPage from '../pages/dashboard/DashboardPage';
 import DepartmentsPage from '../pages/departments/DepartmentsPage';
 import StudentsPage from '../pages/students/StudentsPage';
+import StudentProfile from '../pages/students/StudentProfile';
 import FacultiesPage from '../pages/faculties/FacultiesPage';
+import FacultyProfilePage from '../pages/faculties/FacultyProfilePage'; // Add this import
 import SubjectsPage from '../pages/subjects/SubjectsPage';
 import SectionsPage from '../pages/sections/SectionsPage';
 import CollegePage from '../pages/college/CollegePage';
@@ -49,7 +51,9 @@ export const AppRouter: React.FC = () => {
           <Route path="departments" element={<DepartmentsPage />} />
           <Route path="sections" element={<SectionsPage />} />
           <Route path="students" element={<StudentsPage />} />
+          <Route path="students/:id" element={<StudentProfile />} />
           <Route path="faculties" element={<FacultiesPage />} />
+          <Route path="faculty/:id" element={<FacultyProfilePage />} /> {/* Add this route */}
           <Route path="subjects" element={<SubjectsPage />} />
           <Route path="timetable" element={<TimetablePage />} />
           <Route path="attendance" element={<AttendancePage />} />

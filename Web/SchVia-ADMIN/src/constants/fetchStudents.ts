@@ -14,18 +14,29 @@ export async function getStudents(
   if (dept) params.append('dept', dept);
   if (batch) params.append('batch', batch);
 
-  const headers: HeadersInit = {};
-  if (user.token) {
-    headers['Authorization'] = `Bearer ${user.token}`;
-  }
-
-  const res = await fetch(`${BASE}/fetchstudents?${params}`, { headers });
+  const res = await fetch(`${BASE}/fetchstudents?${params}`);
   if (!res.ok) {
     const { message } = await res.json();
     throw new Error(message || 'Failed to fetch students');
   }
   const { students } = await res.json();
   return students as Student[];
+}
+
+export async function getStudentById(
+  collegeId: number,
+  studentId: string,
+  user: { role: string; department_id: number | null; token: string | null }
+): Promise<Student> {
+  const params = new URLSearchParams({ college_id: String(collegeId) });
+
+  const res = await fetch(`${BASE}/student/${studentId}?${params}`);
+  if (!res.ok) {
+    const { message } = await res.json();
+    throw new Error(message || 'Failed to fetch student details');
+  }
+  const { student } = await res.json();
+  return student as Student;
 }
 
 export async function addStudent(
@@ -43,14 +54,11 @@ export async function addStudent(
   father_phone: string,
   mother_phone: string
 ): Promise<Student> {
-  const headers: HeadersInit = { 'Content-Type': 'application/json' };
-  if (user.token) {
-    headers['Authorization'] = `Bearer ${user.token}`;
-  }
-
   const res = await fetch(`${BASE}/addstudent`, {
     method: 'POST',
-    headers,
+    headers: {
+      'Content-Type': 'application/json',
+    },
     body: JSON.stringify({
       id,
       name,
@@ -88,14 +96,11 @@ export async function updateStudent(
   father_phone: string,
   mother_phone: string
 ): Promise<Student> {
-  const headers: HeadersInit = { 'Content-Type': 'application/json' };
-  if (user.token) {
-    headers['Authorization'] = `Bearer ${user.token}`;
-  }
-
   const res = await fetch(`${BASE}/editstudent/${id}`, {
     method: 'PUT',
-    headers,
+    headers: {
+      'Content-Type': 'application/json',
+    },
     body: JSON.stringify({
       name,
       email,
@@ -118,14 +123,8 @@ export async function updateStudent(
 }
 
 export async function deleteStudent(user: { token: string | null }, id: string): Promise<void> {
-  const headers: HeadersInit = {};
-  if (user.token) {
-    headers['Authorization'] = `Bearer ${user.token}`;
-  }
-
   const res = await fetch(`${BASE}/deletestudent/${id}`, {
     method: 'DELETE',
-    headers
   });
   if (!res.ok) {
     const { message } = await res.json();

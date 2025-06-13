@@ -1007,16 +1007,69 @@ router.post(['/studentForgotPassword', '/studentforgotpassword'], async (req: Re
   }
 });
 
+// New route to fetch a single student's details
+router.get('/student/:id', async (req: Request, res: Response) => {
+  const studentId = req.params.id;
+  const collegeId = Number(req.query.college_id);
+  if (!collegeId) {
+    return res.status(400).json({ message: 'Missing college_id.' });
+  }
+  if (!studentId) {
+    return res.status(400).json({ message: 'Missing student ID.' });
+  }
+
+  try {
+    const result = await pool.query(
+      `SELECT 
+         s.id, 
+         s.name, 
+         s.email,
+         s.batch_id,
+         s.current_year,
+         s.phone, 
+         s.address, 
+         s.pan_number, 
+         s.aadhar_number, 
+         s.father_phone, 
+         s.mother_phone,
+         b.batch_code AS batch_name,
+         b.department_id,
+         d.name AS department_name
+       FROM students s
+       JOIN batches b ON b.id = s.batch_id
+       JOIN departments d ON d.id = b.department_id
+       WHERE s.id = $1 AND d.college_id = $2`,
+      [studentId, collegeId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Student not found.' });
+    }
+
+    const student = result.rows[0];
+    return res.json({ student });
+  } catch (err) {
+    console.error('Fetch Student Profile Error:', err);
+    return res.status(500).json({ message: 'Failed to fetch student details.' });
+  }
+});
+
 ////////////////////////////////////////////////////////////////////////////////
 // Faculties CRUD & Forgot Password
 ////////////////////////////////////////////////////////////////////////////////
 router.get('/fetchfaculties', async (req: Request, res: Response) => {
   const collegeId = Number(req.query.college_id);
-  if (!collegeId) {
-    return res.status(400).json({ message: 'Missing college_id.' });
-  }
+  const role = req.query.role as 'college' | 'department' | 'class';
+  const departmentId = req.query.department_id ? Number(req.query.department_id) : null;
   const search = (req.query.search || '').toString().trim();
   const dept = req.query.dept ? Number(req.query.dept) : null;
+
+  if (!collegeId || !role) {
+    return res.status(400).json({ message: 'Missing college_id or role.' });
+  }
+  if (role === 'department' && !departmentId) {
+    return res.status(400).json({ message: 'Department ID is required for department admins.' });
+  }
 
   try {
     let sql = `
@@ -1037,11 +1090,16 @@ router.get('/fetchfaculties', async (req: Request, res: Response) => {
     `;
     const params: any[] = [collegeId];
 
+    if (role === 'department' && departmentId) {
+      sql += ` AND f.department_id = $${params.length + 1}`;
+      params.push(departmentId);
+    }
+
     if (search) {
       params.push(`%${search}%`);
       sql += ` AND (f.name ILIKE $${params.length} OR f.email ILIKE $${params.length})`;
     }
-    if (dept) {
+    if (dept && role !== 'department') { // Department filter only for non-department admins
       params.push(dept);
       sql += ` AND f.department_id = $${params.length}`;
     }
@@ -1057,9 +1115,15 @@ router.get('/fetchfaculties', async (req: Request, res: Response) => {
 });
 
 router.post('/addfaculty', async (req: Request, res: Response) => {
-  const { id, name, email, department_id, phone, dob, qualification, password } = req.body;
-  if (!id || !name || !email || !department_id || !password) {
-    return res.status(400).json({ message: 'id, name, email, department_id, and password are required.' });
+  const { id, name, email, department_id, phone, dob, qualification, password, role, admin_department_id } = req.body;
+  if (!id || !name || !email || !department_id || !password || !role) {
+    return res.status(400).json({ message: 'id, name, email, department_id, password, and role are required.' });
+  }
+  if (role === 'department' && !admin_department_id) {
+    return res.status(400).json({ message: 'admin_department_id is required for department admins.' });
+  }
+  if (role === 'department' && department_id !== admin_department_id) {
+    return res.status(403).json({ message: 'Department admins can only add faculties to their own department.' });
   }
 
   try {
@@ -1095,9 +1159,15 @@ router.post('/addfaculty', async (req: Request, res: Response) => {
 
 router.put('/editfaculty/:id', async (req: Request, res: Response) => {
   const id = req.params.id;
-  const { name, email, department_id, phone, dob, qualification } = req.body;
-  if (!name || !email || !department_id) {
-    return res.status(400).json({ message: 'name, email, and department_id are required.' });
+  const { name, email, department_id, phone, dob, qualification, role, admin_department_id } = req.body;
+  if (!name || !email || !department_id || !role) {
+    return res.status(400).json({ message: 'name, email, department_id, and role are required.' });
+  }
+  if (role === 'department' && !admin_department_id) {
+    return res.status(400).json({ message: 'admin_department_id is required for department admins.' });
+  }
+  if (role === 'department' && department_id !== admin_department_id) {
+    return res.status(403).json({ message: 'Department admins can only edit faculties in their own department.' });
   }
 
   const updates = [
@@ -1139,7 +1209,27 @@ router.put('/editfaculty/:id', async (req: Request, res: Response) => {
 
 router.delete('/deletefaculty/:id', async (req: Request, res: Response) => {
   const id = req.params.id;
+  const { role, admin_department_id } = req.query;
+  if (!role) {
+    return res.status(400).json({ message: 'role is required.' });
+  }
+  if (role === 'department' && !admin_department_id) {
+    return res.status(400).json({ message: 'admin_department_id is required for department admins.' });
+  }
+
   try {
+    if (role === 'department') {
+      const faculty = await pool.query(
+        `SELECT department_id FROM faculties WHERE id = $1`,
+        [id]
+      );
+      if (faculty.rowCount === 0) {
+        return res.status(404).json({ message: 'Faculty not found.' });
+      }
+      if (Number(admin_department_id) !== faculty.rows[0].department_id) {
+        return res.status(403).json({ message: 'Department admins can only delete faculties from their own department.' });
+      }
+    }
     const result = await pool.query(`DELETE FROM faculties WHERE id = $1 RETURNING id`, [id]);
     if (result.rowCount === 0) {
       return res.status(404).json({ message: 'Faculty not found.' });
@@ -1152,9 +1242,12 @@ router.delete('/deletefaculty/:id', async (req: Request, res: Response) => {
 });
 
 router.post(['/facultyForgotPassword', '/facultyforgotpassword'], async (req: Request, res: Response) => {
-  const { id } = req.body;
-  if (!id) {
-    return res.status(400).json({ success: false, message: 'id is required.' });
+  const { id, role, admin_department_id } = req.body;
+  if (!id || !role) {
+    return res.status(400).json({ success: false, message: 'id and role are required.' });
+  }
+  if (role === 'department' && !admin_department_id) {
+    return res.status(400).json({ success: false, message: 'admin_department_id is required for department admins.' });
   }
 
   try {
@@ -1163,6 +1256,9 @@ router.post(['/facultyForgotPassword', '/facultyforgotpassword'], async (req: Re
       return res.status(404).json({ success: false, message: 'Faculty not found.' });
     }
     const faculty = rows[0];
+    if (role === 'department' && Number(admin_department_id) !== faculty.department_id) {
+      return res.status(403).json({ success: false, message: 'Department admins can only reset passwords for faculties in their own department.' });
+    }
 
     const rawPassword = crypto.randomBytes(4).toString('hex');
     await pool.query(
@@ -1191,17 +1287,65 @@ router.post(['/facultyForgotPassword', '/facultyforgotpassword'], async (req: Re
   }
 });
 
+router.get('/fetchfaculty/:id', async (req: Request, res: Response) => {
+  const id = req.params.id;
+  const collegeId = Number(req.query.college_id);
+  const role = req.query.role as 'college' | 'department' | 'class';
+  const adminDepartmentId = req.query.admin_department_id ? Number(req.query.admin_department_id) : null;
+
+  if (!id || !collegeId || !role) {
+    return res.status(400).json({ message: 'id, college_id, and role are required.' });
+  }
+  if (role === 'department' && !adminDepartmentId) {
+    return res.status(400).json({ message: 'admin_department_id is required for department admins.' });
+  }
+
+  try {
+    const sql = `
+      SELECT
+        f.id,
+        f.name,
+        f.email,
+        f.phone,
+        f.dob,
+        f.qualification,
+        f.department_id,
+        d.name AS department_name,
+        COUNT(bss.id) AS subjects_count
+      FROM faculties f
+      JOIN departments d ON f.department_id = d.id
+      LEFT JOIN batch_semester_subjects bss ON bss.faculty_id = f.id
+      WHERE f.id = $1 AND d.college_id = $2
+      ${role === 'department' ? 'AND f.department_id = $3' : ''}
+      GROUP BY f.id, d.name;
+    `;
+    const params: any[] = [id, collegeId];
+    if (role === 'department') {
+      params.push(adminDepartmentId);
+    }
+
+    const { rows } = await pool.query(sql, params);
+    if (rows.length === 0) {
+      return res.status(404).json({ message: 'Faculty not found or access denied.' });
+    }
+    return res.json({ faculty: rows[0] });
+  } catch (err) {
+    console.error('Fetch Faculty Error:', err);
+    return res.status(500).json({ message: 'Failed to fetch faculty.' });
+  }
+});
+
 ////////////////////////////////////////////////////////////////////////////////
 // Subjects CRUD
 ////////////////////////////////////////////////////////////////////////////////
 router.get('/fetchsubjects', async (req: Request, res: Response) => {
   const collegeId = Number(req.query.college_id);
+  const departmentId = req.query.department_id ? Number(req.query.department_id) : null;
   if (!collegeId) {
     return res.status(400).json({ message: 'Missing college_id.' });
   }
   const search = (req.query.search || '').toString().trim();
   const dept = req.query.dept ? Number(req.query.dept) : null;
-  const sem = req.query.sem ? Number(req.query.sem) : null;
 
   try {
     let sql = `
@@ -1220,6 +1364,10 @@ router.get('/fetchsubjects', async (req: Request, res: Response) => {
     `;
     const params: any[] = [collegeId];
 
+    if (departmentId) {
+      params.push(departmentId);
+      sql += ` AND sub.department_id = $${params.length}`;
+    }
     if (search) {
       params.push(`%${search}%`);
       sql += ` AND (sub.name ILIKE $${params.length} OR sub.subject_code ILIKE $${params.length})`;
@@ -1227,13 +1375,6 @@ router.get('/fetchsubjects', async (req: Request, res: Response) => {
     if (dept) {
       params.push(dept);
       sql += ` AND sub.department_id = $${params.length}`;
-    }
-    if (sem) {
-      params.push(sem);
-      sql += ` AND EXISTS (
-        SELECT 1 FROM batch_semester_subjects bss 
-        WHERE bss.subject_id = sub.id AND bss.semester_no = $${params.length}
-      )`;
     }
 
     sql += `
@@ -1250,18 +1391,42 @@ router.get('/fetchsubjects', async (req: Request, res: Response) => {
 });
 
 router.post('/addsubject', async (req, res) => {
-  const { subject_code, name, department_id, credits } = req.body;
-  if (!subject_code || !name || !department_id || !credits) {
-    return res.status(400).json({ message: 'subject_code, name, department_id, and credits are required.' });
+  const { college_id, subject_code, name, department_id, credits } = req.body;
+  if (!college_id || !subject_code || !name || !department_id || !credits) {
+    return res.status(400).json({ message: 'college_id, subject_code, name, department_id, and credits are required.' });
   }
   try {
+    // Verify department belongs to the college
+    const deptCheck = await pool.query(
+      `SELECT 1 FROM departments WHERE id = $1 AND college_id = $2`,
+      [department_id, college_id]
+    );
+    if (deptCheck.rowCount === 0) {
+      return res.status(400).json({ message: 'Invalid department_id.' });
+    }
+
     const result = await pool.query(
       `INSERT INTO subjects (subject_code, name, department_id, credits)
        VALUES ($1, $2, $3, $4)
        RETURNING id, subject_code, name, department_id, credits;`,
       [subject_code, name, department_id, credits]
     );
-    return res.json({ subject: result.rows[0] });
+    const subject = result.rows[0];
+
+    // Fetch department name
+    const deptResult = await pool.query(
+      `SELECT name FROM departments WHERE id = $1`,
+      [department_id]
+    );
+    const department_name = deptResult.rows[0]?.name || 'Unknown';
+
+    return res.json({
+      subject: {
+        ...subject,
+        department_name,
+        faculty_count: 0
+      }
+    });
   } catch (err: any) {
     console.error('Add Subject Error:', err);
     if (err.code === '23505') {
@@ -1276,26 +1441,59 @@ router.post('/addsubject', async (req, res) => {
 
 router.put('/editsubject/:id', async (req, res) => {
   const id = Number(req.params.id);
-  const { subject_code, name, department_id, credits } = req.body;
-  if (!subject_code || !name || !department_id || !credits) {
-    return res.status(400).json({ message: 'subject_code, name, department_id, and credits are required.' });
+  const { college_id, subject_code, name, department_id, credits } = req.body;
+  if (!college_id || !subject_code || !name || !department_id || !credits) {
+    return res.status(400).json({ message: 'college_id, subject_code, name, department_id, and credits are required.' });
   }
   try {
+    // Verify department belongs to the college
+    const deptCheck = await pool.query(
+      `SELECT 1 FROM departments WHERE id = $1 AND college_id = $2`,
+      [department_id, college_id]
+    );
+    if (deptCheck.rowCount === 0) {
+      return res.status(400).json({ message: 'Invalid department_id.' });
+    }
+
     const result = await pool.query(
       `UPDATE subjects
-          SET subject_code = $1,
-              name = $2,
-              department_id = $3,
-              credits = $4,
-              updated_at = NOW()
-        WHERE id = $5
-        RETURNING id, subject_code, name, department_id, credits;`,
+       SET subject_code = $1,
+           name = $2,
+           department_id = $3,
+           credits = $4,
+           updated_at = NOW()
+       WHERE id = $5
+       RETURNING id, subject_code, name, department_id, credits;`,
       [subject_code, name, department_id, credits, id]
     );
     if (result.rowCount === 0) {
       return res.status(404).json({ message: 'Subject not found.' });
     }
-    return res.json({ subject: result.rows[0] });
+    const subject = result.rows[0];
+
+    // Fetch department name
+    const deptResult = await pool.query(
+      `SELECT name FROM departments WHERE id = $1`,
+      [department_id]
+    );
+    const department_name = deptResult.rows[0]?.name || 'Unknown';
+
+    // Fetch faculty count
+    const facultyResult = await pool.query(
+      `SELECT COUNT(bss.id) AS faculty_count
+       FROM batch_semester_subjects bss
+       WHERE bss.subject_id = $1`,
+      [id]
+    );
+    const faculty_count = Number(facultyResult.rows[0]?.faculty_count) || 0;
+
+    return res.json({
+      subject: {
+        ...subject,
+        department_name,
+        faculty_count
+      }
+    });
   } catch (err: any) {
     console.error('Edit Subject Error:', err);
     if (err.code === '23505') {
@@ -1310,10 +1508,23 @@ router.put('/editsubject/:id', async (req, res) => {
 
 router.delete('/deletesubject/:id', async (req, res) => {
   const id = Number(req.params.id);
+  const collegeId = Number(req.query.college_id);
+  const departmentId = req.query.department_id ? Number(req.query.department_id) : null;
+  if (!collegeId) {
+    return res.status(400).json({ message: 'Missing college_id.' });
+  }
   try {
-    const result = await pool.query(`DELETE FROM subjects WHERE id = $1 RETURNING id`, [id]);
+    let sql = `DELETE FROM subjects WHERE id = $1 AND department_id IN (SELECT id FROM departments WHERE college_id = $2)`;
+    const params: any[] = [id, collegeId];
+
+    if (departmentId) {
+      params.push(departmentId);
+      sql += ` AND department_id = $${params.length}`;
+    }
+
+    const result = await pool.query(sql, params);
     if (result.rowCount === 0) {
-      return res.status(404).json({ message: 'Subject not found.' });
+      return res.status(404).json({ message: 'Subject not found or unauthorized.' });
     }
     return res.json({ success: true });
   } catch (err) {
@@ -1597,144 +1808,293 @@ router.delete('/deleteDepartmentAdmin/:id', async (req, res) => {
 ////////////////////////////////////////////////////////////////////////////////
 // Timetable
 ////////////////////////////////////////////////////////////////////////////////
-router.post('/createtimetable', async (req: Request, res: Response) => {
-  const { batch_id, times } = req.body;
-  if (!batch_id || !Array.isArray(times)) {
-    return res.status(400).json({ message: 'batch_id and times[] are required.' });
-  }
 
+
+
+// Fetch department options for a college
+router.get('/timetable/departments/:collegeId', async (req: Request, res: Response) => {
+  const { collegeId } = req.params;
   try {
-    // Delete existing periods
-    await pool.query(`DELETE FROM periods WHERE batch_id = $1`, [batch_id]);
-
-    // Insert new periods
-    for (let i = 0; i < times.length; i++) {
-      const name = `Period ${i + 1}`;
-      const slot = times[i];
-      const rangeLit = `[${slot.replace('-', ',')})`;
-      await pool.query(
-        `INSERT INTO periods (batch_id, name, time_slot)
-         VALUES ($1, $2, $3::tsrange)`,
-        [batch_id, name, rangeLit]
-      );
-    }
-
-    res.json({ message: 'Timetable created', count: times.length });
-  } catch (err) {
-    console.error('Create Timetable Error:', err);
-    res.status(500).json({ message: 'Server error.' });
-  }
-});
-
-router.get('/periods', async (req: Request, res: Response) => {
-  const batch_id = Number(req.query.batch_id);
-  if (!batch_id) return res.status(400).json({ message: 'batch_id is required.' });
-  try {
-    const { rows } = await pool.query(
-      `
-      SELECT id, name, time_slot
-        FROM periods
-       WHERE batch_id = $1
-      `,
-      [batch_id]
+    const result: QueryResult = await pool.query(
+      `SELECT id, name FROM departments WHERE college_id = $1 ORDER BY name`,
+      [collegeId]
     );
-
-    const periods = rows.map(r => ({
-      id: r.id,
-      name: r.name,
-      time: `${r.time_slot.lower}-${r.time_slot.upper}`,
-    }));
-    res.json({ periods });
+    res.json({ departments: result.rows.map(row => ({ value: row.id, label: row.name })) });
   } catch (err) {
-    console.error('Fetch Periods Error:', err);
-    res.status(500).json({ message: 'Server error.' });
+    const pgErr = err as PostgresError;
+    res.status(500).json({ message: `Error fetching departments: ${pgErr.message}` });
   }
 });
 
-router.get('/timetableentries', async (req: Request, res: Response) => {
-  const batch_id = Number(req.query.batch_id);
-  const semester_no = Number(req.query.semester_no);
-  if (!batch_id || !semester_no) {
-    return res.status(400).json({ message: 'batch_id and semester_no are required.' });
-  }
+// Fetch section (batch) options for a college and optional department
+router.get('/timetable/sections/:collegeId', async (req: Request, res: Response) => {
+  const { collegeId } = req.params;
+  const { departmentId } = req.query;
   try {
-    const { rows } = await pool.query(
+    let query = `
+      SELECT b.id, b.batch_code, b.name, b.batch_year
+      FROM batches b
+      JOIN departments d ON b.department_id = d.id
+      WHERE d.college_id = $1
+    `;
+    const params: any[] = [collegeId];
+    if (departmentId) {
+      query += ` AND b.department_id = $2`;
+      params.push(departmentId);
+    }
+    query += ` ORDER BY b.batch_year DESC, b.batch_code`;
+    const result: QueryResult = await pool.query(query, params);
+    res.json({
+      sections: result.rows.map(row => ({
+        value: row.id,
+        label: `${row.batch_code} (${row.batch_year})`
+      }))
+    });
+  } catch (err) {
+    const pgErr = err as PostgresError;
+    res.status(500).json({ message: `Error fetching sections: ${pgErr.message}` });
+  }
+});
+
+// Fetch subject options for a department and semester
+router.get('/timetable/subjects/:collegeId/:departmentId/:semesterNo', async (req: Request, res: Response) => {
+  const { collegeId, departmentId, semesterNo } = req.params;
+  try {
+    const result: QueryResult = await pool.query(
+      `
+      SELECT s.id, s.name
+      FROM subjects s
+      JOIN departments d ON s.department_id = d.id
+      WHERE d.college_id = $1 AND s.department_id = $2
+      ORDER BY s.name
+      `,
+      [collegeId, departmentId]
+    );
+    res.json({ subjects: result.rows.map(row => ({ value: row.id, label: row.name })) });
+  } catch (err) {
+    const pgErr = err as PostgresError;
+    res.status(500).json({ message: `Error fetching subjects: ${pgErr.message}` });
+  }
+});
+
+// Fetch faculty options for a department
+router.get('/timetable/faculties/:collegeId/:departmentId', async (req: Request, res: Response) => {
+  const { collegeId, departmentId } = req.params;
+  try {
+    const result: QueryResult = await pool.query(
+      `
+      SELECT f.id, f.name
+      FROM faculties f
+      JOIN departments d ON f.department_id = d.id
+      WHERE d.college_id = $1 AND f.department_id = $2
+      ORDER BY f.name
+      `,
+      [collegeId, departmentId]
+    );
+    res.json({ faculties: result.rows.map(row => ({ value: row.id, label: row.name })) });
+  } catch (err) {
+    const pgErr = err as PostgresError;
+    res.status(500).json({ message: `Error fetching faculties: ${pgErr.message}` });
+  }
+});
+
+// Fetch periods for a batch
+router.get('/timetable/periods/:batchId', async (req: Request, res: Response) => {
+  const { batchId } = req.params;
+  try {
+    const result: QueryResult = await pool.query(
+      `
+      SELECT id, batch_id, name, time_slot::text AS time
+      FROM periods
+      WHERE batch_id = $1
+      ORDER BY time_slot
+      `,
+      [batchId]
+    );
+    res.json({ periods: result.rows });
+  } catch (err) {
+    const pgErr = err as PostgresError;
+    res.status(500).json({ message: `Error fetching periods: ${pgErr.message}` });
+  }
+});
+
+// Fetch timetable entries for a batch and semester
+router.get('/timetable/entries/:batchId/:semesterNo', async (req: Request, res: Response) => {
+  const { batchId, semesterNo } = req.params;
+  try {
+    const result: QueryResult = await pool.query(
       `
       SELECT
         te.id,
+        te.batch_id,
         te.weekday,
         te.period_id,
         te.subject_id,
+        te.semester_no,
         te.faculty_id,
         s.name AS subject,
         f.name AS faculty
       FROM timetable_entries te
       JOIN subjects s ON te.subject_id = s.id
       JOIN faculties f ON te.faculty_id = f.id
-      WHERE te.batch_id = $1
-        AND te.semester_no = $2
+      WHERE te.batch_id = $1 AND te.semester_no = $2
       `,
+      [batchId, semesterNo]
+    );
+    res.json({ entries: result.rows });
+  } catch (err) {
+    const pgErr = err as PostgresError;
+    res.status(500).json({ message: `Error fetching timetable entries: ${pgErr.message}` });
+  }
+});
+
+// Create timetable (periods) for a batch and semester
+router.post('/timetable/create', async (req: Request, res: Response) => {
+  const { batch_id, semester_no, times } = req.body;
+  console.log('Request to /timetable/create:', { batch_id, semester_no, times });
+  if (!batch_id || !semester_no || !Array.isArray(times) || times.length === 0) {
+    return res.status(400).json({ message: 'Invalid request parameters' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Delete existing periods for the batch and semester
+    await client.query(
+      `DELETE FROM periods WHERE batch_id = $1 AND semester_no = $2`,
       [batch_id, semester_no]
     );
 
-    res.json({ entries: rows });
+    // Get department_id for the batch
+    const deptResult: QueryResult = await client.query(
+      `SELECT department_id FROM batches WHERE id = $1`,
+      [batch_id]
+    );
+    if (deptResult.rows.length === 0) {
+      throw new Error('Batch not found');
+    }
+    const department_id = deptResult.rows[0].department_id;
+
+    // Validate time formats and overlaps
+    const timeRanges = times.map((time: string, i: number) => {
+      const timeMatch = /^(\d\d):(\d\d)-(\d\d):(\d\d)$/.exec(time);
+      if (!timeMatch) {
+        throw new Error(`Invalid time format for period ${i + 1}: ${time}. Expected HH:MM-HH:MM`);
+      }
+      const [, startHour, startMin, endHour, endMin] = timeMatch;
+      const start = `${startHour}:${startMin}:00`;
+      const end = `${endHour}:${endMin}:00`;
+      const startMinutes = parseInt(startHour) * 60 + parseInt(startMin);
+      const endMinutes = parseInt(endHour) * 60 + parseInt(endMin);
+      if (startMinutes >= endMinutes) {
+        throw new Error(`Invalid time range for period ${i + 1}: start (${start}) must be before end (${end})`);
+      }
+      return { start: startMinutes, end: endMinutes, index: i + 1 };
+    });
+
+    // Check for overlaps
+    for (let i = 0; i < timeRanges.length; i++) {
+      for (let j = i + 1; j < timeRanges.length; j++) {
+        const range1 = timeRanges[i];
+        const range2 = timeRanges[j];
+        if (range1.start < range2.end && range2.start < range1.end) {
+          throw new Error(
+            `Time overlap detected between Period ${range1.index} (${times[i]}) and Period ${range2.index} (${times[j]})`
+          );
+        }
+      }
+    }
+
+    // Insert new periods
+    for (let i = 0; i < times.length; i++) {
+      const time = times[i];
+      const [, startHour, startMin, endHour, endMin] = /^(\d\d):(\d\d)-(\d\d):(\d\d)$/.exec(time)!;
+      const start = `${startHour}:${startMin}:00`;
+      const end = `${endHour}:${endMin}:00`;
+      const startTs = `1970-01-01 ${start}`;
+      const endTs = `1970-01-01 ${end}`;
+      const timeRange = `[${startTs},${endTs})`;
+      const name = `Period ${i + 1}`;
+      await client.query(
+        `
+        INSERT INTO periods (department_id, batch_id, semester_no, time_slot, name)
+        VALUES ($1, $2, $3, $4, $5)
+        `,
+        [department_id, batch_id, semester_no, timeRange, name]
+      );
+    }
+
+    await client.query('COMMIT');
+    res.json({ message: 'Timetable created successfully' });
   } catch (err) {
-    console.error('Fetch Timetable Entries Error:', err);
-    res.status(500).json({ message: 'Server error.' });
+    await client.query('ROLLBACK');
+    const pgErr = err as PostgresError;
+    console.error('Error in /timetable/create:', pgErr);
+    res.status(500).json({ message: `Error creating timetable: ${pgErr.message}` });
+  } finally {
+    client.release();
   }
 });
 
-router.post('/timetableentry', async (req: Request, res: Response) => {
-  const { id, batch_id, weekday, period_id, subject_id, faculty_id, semester_no } = req.body;
-  if (!batch_id || !weekday || !period_id || !subject_id || !faculty_id || !semester_no) {
-    return res.status(400).json({ message: 'Missing required fields.' });
+// Save timetable entry (create or update)
+router.post('/timetable/entry', async (req: Request, res: Response) => {
+  const { id, section_id, weekday, period_id, subject_id, faculty_id, semester_no } = req.body;
+  if (!section_id || !weekday || !period_id || !subject_id || !faculty_id || !semester_no) {
+    return res.status(400).json({ message: 'Missing required fields' });
   }
+
+  const client = await pool.connect();
   try {
+    await client.query('BEGIN');
+
     if (id) {
-      // Update
-      await pool.query(
-        `UPDATE timetable_entries
-            SET subject_id = $1, faculty_id = $2
-          WHERE id = $3`,
+      // Update existing entry
+      await client.query(
+        `
+        UPDATE timetable_entries
+        SET subject_id = $1, faculty_id = $2
+        WHERE id = $3
+        `,
         [subject_id, faculty_id, id]
       );
-      res.json({ message: 'Entry updated.' });
     } else {
-      // Create
-      const { rows } = await pool.query(
-        `INSERT INTO timetable_entries
-           (batch_id, weekday, period_id, subject_id, faculty_id, semester_no)
-         VALUES ($1, $2, $3, $4, $5, $6)
-         RETURNING id`,
-        [batch_id, weekday, period_id, subject_id, faculty_id, semester_no]
+      // Create new entry
+      await client.query(
+        `
+        INSERT INTO timetable_entries (batch_id, semester_no, weekday, period_id, subject_id, faculty_id)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        `,
+        [section_id, semester_no, weekday, period_id, subject_id, faculty_id]
       );
-      res.json({ message: 'Entry created.', id: rows[0].id });
     }
-  } catch (err: any) {
-    console.error('Timetable Entry Error:', err);
-    if (err.code === '23505') {
-      return res.status(409).json({ message: 'That slot is already booked.' });
-    }
-    if (err.code === '23503') {
-      return res.status(400).json({ message: 'Invalid batch_id, period_id, subject_id, or faculty_id.' });
-    }
-    res.status(500).json({ message: 'Server error.' });
-  }
-});
 
-router.delete('/timetableentry/:id', async (req: Request, res: Response) => {
-  const id = Number(req.params.id);
-  if (!id) return res.status(400).json({ message: 'id is required.' });
-  try {
-    const result = await pool.query(`DELETE FROM timetable_entries WHERE id = $1 RETURNING id`, [id]);
-    if (result.rowCount === 0) {
-      return res.status(404).json({ message: 'Timetable entry not found.' });
-    }
-    res.json({ message: 'Entry deleted.' });
+    await client.query('COMMIT');
+    res.json({ message: id ? 'Entry updated' : 'Entry created' });
   } catch (err) {
-    console.error('Delete Timetable Entry Error:', err);
-    res.status(500).json({ message: 'Server error.' });
+    await client.query('ROLLBACK');
+    const pgErr = err as PostgresError;
+    res.status(500).json({ message: `Error saving timetable entry: ${pgErr.message}` });
+  } finally {
+    client.release();
   }
 });
 
+// Delete timetable entry
+router.delete('/timetable/entry/:id', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  try {
+    const result: QueryResult = await pool.query(
+      `DELETE FROM timetable_entries WHERE id = $1 RETURNING id`,
+      [id]
+    );
+    if (result.rowCount === 0) {
+      return res.status(404).json({ message: 'Entry not found' });
+    }
+    res.json({ message: 'Entry deleted' });
+  } catch (err) {
+    const pgErr = err as PostgresError;
+    res.status(500).json({ message: `Error deleting timetable entry: ${pgErr.message}` });
+  }
+});
 export default router;

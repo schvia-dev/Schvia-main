@@ -74,7 +74,6 @@ CREATE TABLE batches (
   UNIQUE(department_id, batch_year, batch_code)
 );
 
-
 -- Students
 CREATE TABLE students (
   id TEXT PRIMARY KEY,
@@ -116,10 +115,13 @@ CREATE TABLE batch_semester_subjects (
 -- Periods
 CREATE TABLE periods (
   id SERIAL PRIMARY KEY,
+  department_id INTEGER NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
   batch_id INTEGER NOT NULL REFERENCES batches(id) ON DELETE CASCADE,
+  semester_no SMALLINT NOT NULL CHECK (semester_no BETWEEN 1 AND 8),
   time_slot tsrange NOT NULL,
-  name TEXT, -- Optional period name (e.g., "Period 1")
-  EXCLUDE USING gist (batch_id WITH =, time_slot WITH &&) -- Prevent overlapping time slots
+  name TEXT,
+  EXCLUDE USING gist (batch_id WITH =, semester_no WITH =, time_slot WITH &&),
+  UNIQUE(department_id, batch_id, semester_no, name)
 );
 
 -- Timetable Entries
@@ -133,6 +135,27 @@ CREATE TABLE timetable_entries (
   faculty_id TEXT NOT NULL REFERENCES faculties(id) ON DELETE CASCADE,
   UNIQUE(batch_id, semester_no, weekday, period_id)
 );
+
+-- Trigger function to validate period_id in timetable_entries
+CREATE OR REPLACE FUNCTION validate_timetable_period()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM periods p
+    WHERE p.id = NEW.period_id
+    AND p.batch_id = NEW.batch_id
+    AND p.semester_no = NEW.semester_no
+  ) THEN
+    RAISE EXCEPTION 'Invalid period_id: period does not match batch_id and semester_no';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Apply trigger to timetable_entries
+CREATE TRIGGER trigger_validate_timetable_period
+BEFORE INSERT OR UPDATE ON timetable_entries
+FOR EACH ROW EXECUTE FUNCTION validate_timetable_period();
 
 -- Attendance Sessions
 CREATE TABLE attendance_sessions (
@@ -285,9 +308,10 @@ CREATE INDEX idx_students_batch ON students(batch_id);
 CREATE INDEX idx_subjects_department ON subjects(department_id);
 CREATE INDEX idx_batch_semester_subjects_batch ON batch_semester_subjects(batch_id);
 CREATE INDEX idx_batch_semester_subjects_faculty ON batch_semester_subjects(faculty_id);
-CREATE INDEX idx_periods_batch ON periods(batch_id);
+CREATE INDEX idx_periods_batch_semester ON periods(batch_id, semester_no);
 CREATE INDEX idx_timetable_batch ON timetable_entries(batch_id);
 CREATE INDEX idx_timetable_faculty ON timetable_entries(faculty_id);
+CREATE INDEX idx_timetable_batch_semester ON timetable_entries(batch_id, semester_no);
 CREATE INDEX idx_attendance_session ON attendance_records(session_id);
 CREATE INDEX idx_attendance_student ON attendance_records(student_id);
 CREATE INDEX idx_results_student ON student_semester_results(student_id);
@@ -296,4 +320,3 @@ CREATE INDEX idx_posts_visibility ON posts(visibility_type, visibility_id);
 CREATE INDEX idx_assignments_subject ON assignments(batch_semester_subject_id);
 CREATE INDEX idx_submissions_assignment ON assignment_submissions(assignment_id);
 CREATE INDEX idx_resources_subject ON resources(batch_semester_subject_id);
-
