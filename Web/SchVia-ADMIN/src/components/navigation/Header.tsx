@@ -1,5 +1,5 @@
 import React from 'react';
-import { Menu, Sun, Moon, Bell, User } from 'lucide-react';
+import { Menu, Sun, Moon, User } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import Button from '../ui/Button';
@@ -52,27 +52,27 @@ const Header: React.FC<HeaderProps> = ({ sidebarOpen, setSidebarOpen }) => {
         {/* Logos + Title */}
         <div className="flex items-center space-x-3">
             {/* App Logo */}
-            <div
-              className="w-12 h-12 rounded-full border-2 flex items-center justify-center overflow-hidden"
-              style={{ borderColor:currentColors.headings }}
-            >
-              <img src={appLogoSrc} alt="App Logo" className="w-10 h-10 object-contain" />
-            </div>
+<div
+  className="w-12 h-12 rounded-full border-2 flex items-center justify-center overflow-hidden"
+  style={{ borderColor: logoBorderColor }}
+>
+  <img src={appLogoSrc} alt="App Logo" className="w-10 h-10 object-contain" />
+</div>
 
-            <span
-              className="text-2xl font-thin mx-1"
-              style={{ color: currentColors.headings }}
-            >
-              /
-            </span>
+<span
+  className="text-2xl font-thin mx-1"
+  style={{ color: currentColors.headings }}
+>
+  /
+</span>
 
-            {/* College Logo */}
-            <div
-              className="w-12 h-12 rounded-full border-2 flex items-center justify-center overflow-hidden bg-white"
-              style={{ borderColor:currentColors.headings }}
-            >
-              <img src={collegeLogoSrc} alt="College Logo" className="w-10 h-10 object-contain" />
-            </div>
+{/* College Logo */}
+<div
+  className="w-12 h-12 rounded-full border-2 flex items-center justify-center overflow-hidden bg-white"
+  style={{ borderColor: logoBorderColor }}
+>
+  <img src={collegeLogoSrc} alt="College Logo" className="w-10 h-10 object-contain" />
+</div>
 
             {/* Title */}
             <h1
@@ -94,17 +94,6 @@ const Header: React.FC<HeaderProps> = ({ sidebarOpen, setSidebarOpen }) => {
            whileTap={{ scale: 0.95 }}
            transition={{ type: 'spring', stiffness: 300, damping: 20 }}
          >
-        {/* <button
-          onClick={toggleTheme}
-          className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-          aria-label="Toggle theme"
-          >
-          {theme === 'light' ? (
-            <Moon className={iconColor} size={20} />
-          ) : (
-            <Sun className={iconColor} size={20} />
-          )}
-        </button> */}
         <RoundButton
           onClick={toggleTheme}
           variant="outline"
@@ -113,18 +102,6 @@ const Header: React.FC<HeaderProps> = ({ sidebarOpen, setSidebarOpen }) => {
                   ? <Moon className={iconColor} size={20} />
                   : <Sun  className={iconColor} size={20} />}
           aria-label="Toggle theme"
-        />
-        </motion.div>
-        <motion.div
-           whileHover={{ scale: 1.05 }}
-           whileTap={{ scale: 0.95 }}
-           transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-         >
-        <RoundButton
-          icon={<Bell className={iconColor} size={20} />}
-          variant="outline"
-          size="md"
-          onClick={toggleTheme}
         />
         </motion.div>
 
@@ -140,7 +117,7 @@ const Header: React.FC<HeaderProps> = ({ sidebarOpen, setSidebarOpen }) => {
               className="flex md:mr-2 items-center"
             >
             <div className="mr-2 hidden md:block">
-              <div className="text-sm font-medium text-current">{user?.username}</div>
+              <div className="text-sm font-medium text-current">{user?.name}</div>
               <div className="text-xs text-gray-500 dark:text-gray-400">
                 {user?.role} admin
               </div>

@@ -1,7 +1,3 @@
-// src/constants/fetchTimetableFilters.ts
-
-import { Department, Section } from '../types';
-
 const BASE = '/web';
 
 export interface Option {
@@ -10,48 +6,47 @@ export interface Option {
 }
 
 /**
- * 1) Departments for a college
+ * Fetch departments for a college
  */
-export async function fetchDepartmentOptions(
-  college_id: number
-): Promise<Option[]> {
-  const res = await fetch(`${BASE}/fetchdepartments?college_id=${college_id}`);
+export async function fetchDepartmentOptions(college_id: number): Promise<Option[]> {
+  const res = await fetch(`${BASE}/fetchDepartmentOptions?college_id=${college_id}`);
   if (!res.ok) throw new Error('Could not load departments');
-  const { departments }: { departments: Department[] } = await res.json();
-  return departments.map(d => ({
-    value: String(d.id),
-    label: d.name
+  const { options }: { options: { value: number; label: string }[] } = await res.json();
+  return options.map(opt => ({
+    value: String(opt.value), // Convert number to string
+    label: opt.label,
   }));
 }
 
 /**
- * 2) Sections for a college, optionally filtered to one department
+ * Fetch sections (batches) for a college, optionally filtered to one department
  */
 export async function fetchSectionOptions(
   college_id: number,
   department_id?: number
 ): Promise<Option[]> {
-  const res = await fetch(`${BASE}/fetchsections?college_id=${college_id}`);
+  const params = new URLSearchParams({ college_id: college_id.toString() });
+  if (department_id) {
+    params.append('department_id', department_id.toString());
+  }
+  const res = await fetch(`${BASE}/fetchSectionOptions?${params.toString()}`);
   if (!res.ok) throw new Error('Could not load sections');
-  const { sections }: { sections: Section[] } = await res.json();
-
-  // if you passed in a department_id, filter on the client side
-  const filtered = department_id
-    ? sections.filter(s => s.department_id === department_id)
-    : sections;
-
-  return filtered.map(s => ({
-    value: String(s.id),
-    label: `${s.name} (Batch ${s.batch_year})`
+  const { options }: { options: { value: number; label: string }[] } = await res.json();
+  return options.map(opt => ({
+    value: String(opt.value), // Convert number to string
+    label: opt.label,
   }));
 }
 
 /**
- * 3) Semesters 1–8
+ * Fetch semesters for a batch
  */
-export function getSemesterOptions(): Option[] {
-  return Array.from({ length: 8 }, (_, i) => ({
-    value: String(i + 1),
-    label: `Semester ${i + 1}`
+export async function fetchSemesterOptions(batch_id: number): Promise<Option[]> {
+  const res = await fetch(`${BASE}/getSemesterOptions?batch_id=${batch_id}`);
+  if (!res.ok) throw new Error('Could not load semesters');
+  const { options }: { options: { value: number; label: string }[] } = await res.json();
+  return options.map(opt => ({
+    value: String(opt.value), // Convert number to string
+    label: opt.label,
   }));
 }

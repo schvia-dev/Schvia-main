@@ -1809,292 +1809,449 @@ router.delete('/deleteDepartmentAdmin/:id', async (req, res) => {
 // Timetable
 ////////////////////////////////////////////////////////////////////////////////
 
+// Fetch Department Options
+router.get('/fetchDepartmentOptions', async (req: Request, res: Response) => {
+  const collegeId = Number(req.query.college_id);
+  if (!collegeId) {
+    return res.status(400).json({ message: 'Missing college_id.' });
+  }
 
-
-// Fetch department options for a college
-router.get('/timetable/departments/:collegeId', async (req: Request, res: Response) => {
-  const { collegeId } = req.params;
   try {
-    const result: QueryResult = await pool.query(
-      `SELECT id, name FROM departments WHERE college_id = $1 ORDER BY name`,
+    const result = await pool.query(
+      `SELECT id AS value, name AS label
+       FROM departments
+       WHERE college_id = $1
+       ORDER BY name`,
       [collegeId]
     );
-    res.json({ departments: result.rows.map(row => ({ value: row.id, label: row.name })) });
+    return res.json({ options: result.rows });
   } catch (err) {
-    const pgErr = err as PostgresError;
-    res.status(500).json({ message: `Error fetching departments: ${pgErr.message}` });
+    console.error('Fetch Department Options Error:', err);
+    return res.status(500).json({ message: 'Failed to fetch department options.' });
   }
 });
 
-// Fetch section (batch) options for a college and optional department
-router.get('/timetable/sections/:collegeId', async (req: Request, res: Response) => {
-  const { collegeId } = req.params;
-  const { departmentId } = req.query;
+// Fetch Section (Batch) Options
+router.get('/fetchSectionOptions', async (req: Request, res: Response) => {
+  const collegeId = Number(req.query.college_id);
+  const departmentId = req.query.department_id ? Number(req.query.department_id) : undefined;
+
+  if (!collegeId || isNaN(collegeId)) {
+    return res.status(400).json({ message: 'Missing or invalid college_id.' });
+  }
+
   try {
     let query = `
-      SELECT b.id, b.batch_code, b.name, b.batch_year
+      SELECT b.id AS value, b.name || ' (Batch ' || b.batch_year || ')' AS label
       FROM batches b
       JOIN departments d ON b.department_id = d.id
       WHERE d.college_id = $1
     `;
-    const params: any[] = [collegeId];
+    const params = [collegeId];
     if (departmentId) {
       query += ` AND b.department_id = $2`;
       params.push(departmentId);
     }
-    query += ` ORDER BY b.batch_year DESC, b.batch_code`;
-    const result: QueryResult = await pool.query(query, params);
-    res.json({
-      sections: result.rows.map(row => ({
-        value: row.id,
-        label: `${row.batch_code} (${row.batch_year})`
-      }))
-    });
+    query += ` ORDER BY b.name`;
+
+    const result = await pool.query(query, params);
+    return res.json({ options: result.rows });
   } catch (err) {
-    const pgErr = err as PostgresError;
-    res.status(500).json({ message: `Error fetching sections: ${pgErr.message}` });
+    console.error('Fetch Section Options Error:', err);
+    return res.status(500).json({ message: 'Failed to fetch sections.' });
   }
 });
 
-// Fetch subject options for a department and semester
-router.get('/timetable/subjects/:collegeId/:departmentId/:semesterNo', async (req: Request, res: Response) => {
-  const { collegeId, departmentId, semesterNo } = req.params;
-  try {
-    const result: QueryResult = await pool.query(
-      `
-      SELECT s.id, s.name
-      FROM subjects s
-      JOIN departments d ON s.department_id = d.id
-      WHERE d.college_id = $1 AND s.department_id = $2
-      ORDER BY s.name
-      `,
-      [collegeId, departmentId]
-    );
-    res.json({ subjects: result.rows.map(row => ({ value: row.id, label: row.name })) });
-  } catch (err) {
-    const pgErr = err as PostgresError;
-    res.status(500).json({ message: `Error fetching subjects: ${pgErr.message}` });
+// Get Semester Options
+router.get('/getSemesterOptions', async (req: Request, res: Response) => {
+  const batchId = Number(req.query.batch_id);
+  if (!batchId) {
+    return res.status(400).json({ message: 'Missing batch_id.' });
   }
-});
 
-// Fetch faculty options for a department
-router.get('/timetable/faculties/:collegeId/:departmentId', async (req: Request, res: Response) => {
-  const { collegeId, departmentId } = req.params;
   try {
-    const result: QueryResult = await pool.query(
-      `
-      SELECT f.id, f.name
-      FROM faculties f
-      JOIN departments d ON f.department_id = d.id
-      WHERE d.college_id = $1 AND f.department_id = $2
-      ORDER BY f.name
-      `,
-      [collegeId, departmentId]
-    );
-    res.json({ faculties: result.rows.map(row => ({ value: row.id, label: row.name })) });
-  } catch (err) {
-    const pgErr = err as PostgresError;
-    res.status(500).json({ message: `Error fetching faculties: ${pgErr.message}` });
-  }
-});
-
-// Fetch periods for a batch
-router.get('/timetable/periods/:batchId', async (req: Request, res: Response) => {
-  const { batchId } = req.params;
-  try {
-    const result: QueryResult = await pool.query(
-      `
-      SELECT id, batch_id, name, time_slot::text AS time
-      FROM periods
-      WHERE batch_id = $1
-      ORDER BY time_slot
-      `,
+    const result = await pool.query(
+      `SELECT current_year
+       FROM batches
+       WHERE id = $1`,
       [batchId]
     );
-    res.json({ periods: result.rows });
+    if (result.rowCount === 0) {
+      return res.status(404).json({ message: 'Batch not found.' });
+    }
+
+    const currentYear = result.rows[0].current_year;
+    let semesters: number[] = [];
+    switch (currentYear) {
+      case '1st':
+        semesters = [1, 2];
+        break;
+      case '2nd':
+        semesters = [3, 4];
+        break;
+      case '3rd':
+        semesters = [5, 6];
+        break;
+      case '4th':
+        semesters = [7, 8];
+        break;
+      default:
+        return res.status(400).json({ message: 'Invalid current_year.' });
+    }
+
+    const options = semesters.map(sem => ({ value: sem, label: `Semester ${sem}` }));
+    return res.json({ options });
   } catch (err) {
-    const pgErr = err as PostgresError;
-    res.status(500).json({ message: `Error fetching periods: ${pgErr.message}` });
+    console.error('Get Semester Options Error:', err);
+    return res.status(500).json({ message: 'Failed to fetch semester options.' });
   }
 });
 
-// Fetch timetable entries for a batch and semester
-router.get('/timetable/entries/:batchId/:semesterNo', async (req: Request, res: Response) => {
-  const { batchId, semesterNo } = req.params;
+// Fetch Subject Options
+router.get('/fetchSubjectOptions', async (req: Request, res: Response) => {
+  const batchId = Number(req.query.batch_id);
+  const semesterNo = Number(req.query.semester_no);
+  if (!batchId || !semesterNo) {
+    return res.status(400).json({ message: 'Missing batch_id or semester_no.' });
+  }
   try {
-    const result: QueryResult = await pool.query(
-      `
-      SELECT
-        te.id,
-        te.batch_id,
-        te.weekday,
-        te.period_id,
-        te.subject_id,
-        te.semester_no,
-        te.faculty_id,
-        s.name AS subject,
-        f.name AS faculty
-      FROM timetable_entries te
-      JOIN subjects s ON te.subject_id = s.id
-      JOIN faculties f ON te.faculty_id = f.id
-      WHERE te.batch_id = $1 AND te.semester_no = $2
-      `,
+    const result = await pool.query(
+      `SELECT s.id AS value, s.name AS label
+       FROM subjects s
+       JOIN batch_semester_subjects bss ON s.id = bss.subject_id
+       WHERE bss.batch_id = $1 AND bss.semester_no = $2
+       ORDER BY s.name`,
       [batchId, semesterNo]
     );
-    res.json({ entries: result.rows });
+    return res.json({ options: result.rows });
   } catch (err) {
-    const pgErr = err as PostgresError;
-    res.status(500).json({ message: `Error fetching timetable entries: ${pgErr.message}` });
+    console.error('Fetch Subject Options Error:', err);
+    return res.status(500).json({ message: 'Failed to fetch subject options.' });
   }
 });
 
-// Create timetable (periods) for a batch and semester
-router.post('/timetable/create', async (req: Request, res: Response) => {
+// Fetch Faculty Options
+router.get('/fetchFacultyOptions', async (req: Request, res: Response) => {
+  const batchId = Number(req.query.batch_id);
+  const semesterNo = Number(req.query.semester_no);
+  const subjectId = req.query.subject_id ? Number(req.query.subject_id) : undefined;
+  if (!batchId || !semesterNo) {
+    return res.status(400).json({ message: 'Missing batch_id or semester_no.' });
+  }
+  try {
+    let query = `
+      SELECT f.id AS value, f.name AS label
+      FROM faculties f
+      JOIN batch_semester_subjects bss ON f.id = bss.faculty_id
+      WHERE bss.batch_id = $1 AND bss.semester_no = $2
+    `;
+    const params = [batchId, semesterNo];
+    if (subjectId) {
+      query += ` AND bss.subject_id = $3`;
+      params.push(subjectId);
+    }
+    query += ` ORDER BY f.name`;
+    const result = await pool.query(query, params);
+    return res.json({ options: result.rows });
+  } catch (err) {
+    console.error('Fetch Faculty Options Error:', err);
+    return res.status(500).json({ message: 'Failed to fetch faculty options.' });
+  }
+});
+
+// Create Timetable
+router.post('/createTimetable', async (req: Request, res: Response) => {
   const { batch_id, semester_no, times } = req.body;
-  console.log('Request to /timetable/create:', { batch_id, semester_no, times });
+
   if (!batch_id || !semester_no || !Array.isArray(times) || times.length === 0) {
-    return res.status(400).json({ message: 'Invalid request parameters' });
+    return res.status(400).json({ message: 'Missing or invalid batch_id, semester_no, or times.' });
   }
 
-  const client = await pool.connect();
   try {
-    await client.query('BEGIN');
-
-    // Delete existing periods for the batch and semester
-    await client.query(
-      `DELETE FROM periods WHERE batch_id = $1 AND semester_no = $2`,
-      [batch_id, semester_no]
-    );
-
-    // Get department_id for the batch
-    const deptResult: QueryResult = await client.query(
+    // Fetch department_id from batches
+    const batchQuery = await pool.query(
       `SELECT department_id FROM batches WHERE id = $1`,
       [batch_id]
     );
-    if (deptResult.rows.length === 0) {
-      throw new Error('Batch not found');
+    if (batchQuery.rowCount === 0) {
+      throw new Error('Invalid batch_id: Batch not found.');
     }
-    const department_id = deptResult.rows[0].department_id;
+    const department_id = batchQuery.rows[0].department_id;
 
-    // Validate time formats and overlaps
-    const timeRanges = times.map((time: string, i: number) => {
-      const timeMatch = /^(\d\d):(\d\d)-(\d\d):(\d\d)$/.exec(time);
-      if (!timeMatch) {
-        throw new Error(`Invalid time format for period ${i + 1}: ${time}. Expected HH:MM-HH:MM`);
+    // Parse and validate times
+    const periods = times.map((time: string, index: number) => {
+      const match = /^(\d{2}):(\d{2})-(\d{2}):(\d{2})$/.exec(time.trim());
+      if (!match) {
+        throw new Error(`Invalid time format for period ${index + 1}: ${time}. Use HH:MM-HH:MM`);
       }
-      const [, startHour, startMin, endHour, endMin] = timeMatch;
-      const start = `${startHour}:${startMin}:00`;
-      const end = `${endHour}:${endMin}:00`;
-      const startMinutes = parseInt(startHour) * 60 + parseInt(startMin);
-      const endMinutes = parseInt(endHour) * 60 + parseInt(endMin);
-      if (startMinutes >= endMinutes) {
-        throw new Error(`Invalid time range for period ${i + 1}: start (${start}) must be before end (${end})`);
-      }
-      return { start: startMinutes, end: endMinutes, index: i + 1 };
+      const [, startHour, startMin, endHour, endMin] = match;
+      const startTime = `2000-01-01 ${startHour}:${startMin}:00`;
+      const endTime = `2000-01-01 ${endHour}:${endMin}:00`;
+      return {
+        name: `Period ${index + 1}`,
+        time_slot: `[${startTime},${endTime})`,
+      };
     });
 
     // Check for overlaps
-    for (let i = 0; i < timeRanges.length; i++) {
-      for (let j = i + 1; j < timeRanges.length; j++) {
-        const range1 = timeRanges[i];
-        const range2 = timeRanges[j];
-        if (range1.start < range2.end && range2.start < range1.end) {
-          throw new Error(
-            `Time overlap detected between Period ${range1.index} (${times[i]}) and Period ${range2.index} (${times[j]})`
-          );
+    for (let i = 0; i < periods.length; i++) {
+      for (let j = i + 1; j < periods.length; j++) {
+        const query = `SELECT $1::tsrange && $2::tsrange AS overlaps`;
+        const result = await pool.query(query, [periods[i].time_slot, periods[j].time_slot]);
+        if (result.rows[0].overlaps) {
+          throw new Error(`Time slots ${periods[i].name} and ${periods[j].name} overlap`);
         }
       }
     }
 
-    // Insert new periods
-    for (let i = 0; i < times.length; i++) {
-      const time = times[i];
-      const [, startHour, startMin, endHour, endMin] = /^(\d\d):(\d\d)-(\d\d):(\d\d)$/.exec(time)!;
-      const start = `${startHour}:${startMin}:00`;
-      const end = `${endHour}:${endMin}:00`;
-      const startTs = `1970-01-01 ${start}`;
-      const endTs = `1970-01-01 ${end}`;
-      const timeRange = `[${startTs},${endTs})`;
-      const name = `Period ${i + 1}`;
-      await client.query(
-        `
-        INSERT INTO periods (department_id, batch_id, semester_no, time_slot, name)
-        VALUES ($1, $2, $3, $4, $5)
-        `,
-        [department_id, batch_id, semester_no, timeRange, name]
-      );
+    // Check if periods exist
+    const existingPeriods = await pool.query(
+      `SELECT 1 FROM periods WHERE batch_id = $1 AND semester_no = $2 LIMIT 1`,
+      [batch_id, semester_no]
+    );
+    if ((existingPeriods as { rowCount: number }).rowCount > 0) {
+      throw new Error('Periods already exist for this batch and semester');
     }
 
-    await client.query('COMMIT');
-    res.json({ message: 'Timetable created successfully' });
-  } catch (err) {
-    await client.query('ROLLBACK');
-    const pgErr = err as PostgresError;
-    console.error('Error in /timetable/create:', pgErr);
-    res.status(500).json({ message: `Error creating timetable: ${pgErr.message}` });
-  } finally {
-    client.release();
+    // Insert periods
+    await pool.query('BEGIN');
+    for (const period of periods) {
+      console.log('Inserting period:', { batch_id, semester_no, department_id, ...period }); // Debug
+      await pool.query(
+        `INSERT INTO periods (batch_id, semester_no, department_id, name, time_slot) 
+         VALUES ($1, $2, $3, $4, $5::tsrange)`,
+        [batch_id, semester_no, department_id, period.name, period.time_slot]
+      );
+    }
+    await pool.query('COMMIT');
+
+    return res.status(200).json({ message: 'Timetable created successfully' });
+  } catch (err: any) {
+    await pool.query('ROLLBACK');
+    console.error('Create Timetable Error:', err.stack); // Enhanced logging
+    return res.status(500).json({ message: err.message || 'Failed to create timetable' });
   }
 });
 
-// Save timetable entry (create or update)
-router.post('/timetable/entry', async (req: Request, res: Response) => {
-  const { id, section_id, weekday, period_id, subject_id, faculty_id, semester_no } = req.body;
-  if (!section_id || !weekday || !period_id || !subject_id || !faculty_id || !semester_no) {
-    return res.status(400).json({ message: 'Missing required fields' });
+// Fetch Periods
+router.get('/fetchPeriods', async (req: Request, res: Response) => {
+  const batchId = Number(req.query.batch_id);
+  const semesterNo = Number(req.query.semester_no);
+  if (!batchId || !semesterNo) {
+    return res.status(400).json({ message: 'Missing batch_id or semester_no.' });
   }
 
+  try {
+    const result = await pool.query(
+      `SELECT id, name,
+              to_char(lower(time_slot), 'HH24:MI') || '-' || to_char(upper(time_slot), 'HH24:MI') AS time
+       FROM periods
+       WHERE batch_id = $1 AND semester_no = $2
+       ORDER BY time_slot`,
+      [batchId, semesterNo]
+    );
+    return res.json({ periods: result.rows });
+  } catch (err) {
+    console.error('Fetch Periods Error:', err);
+    return res.status(500).json({ message: 'Failed to fetch periods.' });
+  }
+});
+
+// Fetch Timetable Entries
+router.get('/fetchEntries', async (req: Request, res: Response) => {
+  const batchId = Number(req.query.batch_id);
+  const semesterNo = Number(req.query.semester_no);
+  if (!batchId || !semesterNo) {
+    return res.status(400).json({ message: 'Missing batch_id or semester_no.' });
+  }
+
+  try {
+    const result = await pool.query(
+      `SELECT te.id, te.batch_id, te.weekday, te.period_id, te.subject_id, te.semester_no, te.faculty_id,
+              sub.name AS subject, f.name AS faculty
+       FROM timetable_entries te
+       JOIN subjects sub ON sub.id = te.subject_id
+       JOIN faculties f ON f.id = te.faculty_id
+       WHERE te.batch_id = $1 AND te.semester_no = $2
+       ORDER BY te.weekday, te.period_id`,
+      [batchId, semesterNo]
+    );
+    return res.json({ entries: result.rows });
+  } catch (err) {
+    console.error('Fetch Entries Error:', err);
+    return res.status(500).json({ message: 'Failed to fetch timetable entries.' });
+  }
+});
+
+// Save Timetable Entry
+router.post('/saveEntry', async (req: Request, res: Response) => {
+  const { id, batch_id, weekday, period_id, subject_id, semester_no, faculty_id } = req.body;
+  if (!batch_id || !weekday || !period_id || !subject_id || !semester_no || !faculty_id) {
+    return res.status(400).json({ message: 'All fields are required.' });
+  }
+  const validWeekdays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  if (!validWeekdays.includes(weekday)) {
+    return res.status(400).json({ message: 'Invalid weekday.' });
+  }
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-
+    console.log('Saving entry:', req.body); // Debug
+    const checks = await Promise.all([
+      client.query(`SELECT id FROM batches WHERE id = $1`, [batch_id]),
+      client.query(`SELECT id FROM periods WHERE id = $1 AND batch_id = $2 AND semester_no = $3`, [period_id, batch_id, semester_no]),
+      client.query(`SELECT id FROM subjects WHERE id = $1`, [subject_id]),
+      client.query(`SELECT id FROM faculties WHERE id = $1`, [faculty_id]),
+    ]);
+    if (checks.some(check => check.rowCount === 0)) {
+      throw new Error('Invalid batch_id, period_id, subject_id, or faculty_id.');
+    }
+    let result;
     if (id) {
-      // Update existing entry
-      await client.query(
-        `
-        UPDATE timetable_entries
-        SET subject_id = $1, faculty_id = $2
-        WHERE id = $3
-        `,
+      const conflictCheck = await client.query(
+        `SELECT id FROM timetable_entries
+         WHERE batch_id = $1 AND semester_no = $2 AND weekday = $3 AND period_id = $4 AND id != $5`,
+        [batch_id, semester_no, weekday, period_id, id]
+      );
+      if ((conflictCheck.rowCount ?? 0) > 0) {
+        throw new Error('A timetable entry already exists for this period and weekday.');
+      }
+      result = await client.query(
+        `UPDATE timetable_entries
+         SET subject_id = $1, faculty_id = $2
+         WHERE id = $3
+         RETURNING id, batch_id, weekday, period_id, subject_id, semester_no, faculty_id,
+                   (SELECT name FROM subjects WHERE id = $1) AS subject,
+                   (SELECT name FROM faculties WHERE id = $2) AS faculty`,
         [subject_id, faculty_id, id]
       );
+      if (result.rowCount === 0) {
+        throw new Error('Timetable entry not found.');
+      }
     } else {
-      // Create new entry
-      await client.query(
-        `
-        INSERT INTO timetable_entries (batch_id, semester_no, weekday, period_id, subject_id, faculty_id)
-        VALUES ($1, $2, $3, $4, $5, $6)
-        `,
-        [section_id, semester_no, weekday, period_id, subject_id, faculty_id]
+      const conflictCheck = await client.query(
+        `SELECT id FROM timetable_entries
+         WHERE batch_id = $1 AND semester_no = $2 AND weekday = $3 AND period_id = $4`,
+        [batch_id, semester_no, weekday, period_id]
+      );
+      if ((conflictCheck.rowCount ?? 0) > 0) {
+        throw new Error('A timetable entry already exists for this period and weekday.');
+      }
+      result = await client.query(
+        `INSERT INTO timetable_entries (batch_id, weekday, period_id, subject_id, semester_no, faculty_id)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING id, batch_id, weekday, period_id, subject_id, semester_no, faculty_id,
+                   (SELECT name FROM subjects WHERE id = $4) AS subject,
+                   (SELECT name FROM faculties WHERE id = $6) AS faculty`,
+        [batch_id, weekday, period_id, subject_id, semester_no, faculty_id]
       );
     }
-
     await client.query('COMMIT');
-    res.json({ message: id ? 'Entry updated' : 'Entry created' });
-  } catch (err) {
+    console.log('Entry saved:', result.rows[0]); // Debug
+    return res.json({ entry: result.rows[0], message: 'Timetable entry saved successfully.' });
+  } catch (err: any) {
     await client.query('ROLLBACK');
-    const pgErr = err as PostgresError;
-    res.status(500).json({ message: `Error saving timetable entry: ${pgErr.message}` });
+    console.error('Save Entry Error:', err.stack);
+    return res.status(400).json({ message: err.message || 'Failed to save timetable entry.' });
   } finally {
     client.release();
   }
 });
 
-// Delete timetable entry
-router.delete('/timetable/entry/:id', async (req: Request, res: Response) => {
-  const { id } = req.params;
+// Delete Timetable Entry
+router.delete('/deleteEntry/:id', async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  if (!id) {
+    return res.status(400).json({ message: 'Missing entry id.' });
+  }
+
   try {
-    const result: QueryResult = await pool.query(
+    const result = await pool.query(
       `DELETE FROM timetable_entries WHERE id = $1 RETURNING id`,
       [id]
     );
     if (result.rowCount === 0) {
-      return res.status(404).json({ message: 'Entry not found' });
+      return res.status(404).json({ message: 'Timetable entry not found.' });
     }
-    res.json({ message: 'Entry deleted' });
+    return res.json({ success: true, message: 'Timetable entry deleted successfully.' });
   } catch (err) {
-    const pgErr = err as PostgresError;
-    res.status(500).json({ message: `Error deleting timetable entry: ${pgErr.message}` });
+    console.error('Delete Entry Error:', err);
+    return res.status(500).json({ message: 'Failed to delete timetable entry.' });
+  }
+});
+
+router.get('/fetchTimetables', async (req: Request, res: Response) => {
+  const collegeId = Number(req.query.college_id);
+  const departmentId = req.query.department_id ? Number(req.query.department_id) : undefined;
+  const batchId = req.query.batch_id ? Number(req.query.batch_id) : undefined;
+  const semesterNo = req.query.semester_no ? Number(req.query.semester_no) : undefined;
+  if (!collegeId) {
+    return res.status(400).json({ message: 'Missing college_id.' });
+  }
+  try {
+    let query = `
+      SELECT DISTINCT p.batch_id, p.semester_no, d.name AS department_name, 
+             b.name || ' (Batch ' || b.batch_year || ')' AS batch_name, b.batch_year
+      FROM periods p
+      JOIN batches b ON b.id = p.batch_id
+      JOIN departments d ON d.id = b.department_id
+      WHERE d.college_id = $1
+    `;
+    const params = [collegeId];
+    let paramIndex = 2;
+    if (departmentId) {
+      query += ` AND b.department_id = $${paramIndex++}`;
+      params.push(departmentId);
+    }
+    if (batchId) {
+      query += ` AND p.batch_id = $${paramIndex++}`;
+      params.push(batchId);
+    }
+    if (semesterNo) {
+      query += ` AND p.semester_no = $${paramIndex++}`;
+      params.push(semesterNo);
+    }
+    query += ` ORDER BY department_name, batch_year, p.semester_no`;
+    console.log('Executing fetchTimetables query:', query, params); // Debug
+    const result = await pool.query(query, params);
+    return res.json({
+      timetables: result.rows.map(row => ({
+        batch_id: row.batch_id,
+        semester_no: row.semester_no,
+        department_name: row.department_name,
+        batch_name: row.batch_name,
+      })),
+    });
+  } catch (err) {
+    console.error('Fetch Timetables Error:', err);
+    return res.status(500).json({ message: 'Failed to fetch timetables.' });
+  }
+});
+
+router.delete('/deleteTimetable', async (req: Request, res: Response) => {
+  const { batch_id, semester_no } = req.body;
+  if (!batch_id || !semester_no) {
+    return res.status(400).json({ message: 'Missing batch_id or semester_no.' });
+  }
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `DELETE FROM timetable_entries WHERE batch_id = $1 AND semester_no = $2`,
+      [batch_id, semester_no]
+    );
+    await client.query(
+      `DELETE FROM periods WHERE batch_id = $1 AND semester_no = $2`,
+      [batch_id, semester_no]
+    );
+    await client.query('COMMIT');
+    return res.json({ message: 'Timetable deleted successfully.' });
+  } catch (err: any) {
+    await client.query('ROLLBACK');
+    console.error('Delete Timetable Error:', err.stack);
+    return res.status(500).json({ message: err.message || 'Failed to delete timetable.' });
+  } finally {
+    client.release();
   }
 });
 export default router;

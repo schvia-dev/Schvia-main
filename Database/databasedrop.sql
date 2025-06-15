@@ -1,4 +1,4 @@
--- STEP 1: DROP ALL TRIGGERS (manually for each table)
+-- STEP 1: DROP ALL TRIGGERS
 DROP TRIGGER IF EXISTS trigger_update_updated_at_admins ON admins;
 DROP TRIGGER IF EXISTS trigger_update_updated_at_faculties ON faculties;
 DROP TRIGGER IF EXISTS trigger_update_updated_at_students ON students;
@@ -8,11 +8,11 @@ DROP TRIGGER IF EXISTS trigger_update_updated_at_posts ON posts;
 DROP TRIGGER IF EXISTS trigger_update_updated_at_assignments ON assignments;
 DROP TRIGGER IF EXISTS trigger_update_updated_at_assignment_submissions ON assignment_submissions;
 DROP TRIGGER IF EXISTS trigger_update_updated_at_resources ON resources;
-DROP TRIGGER IF EXISTS trigger_validate_timetable_period ON timetable_entries;
+DROP TRIGGER IF EXISTS trigger_validate_timetable_entry ON timetable_entries;
 
 -- STEP 2: DROP TRIGGER FUNCTIONS
 DROP FUNCTION IF EXISTS update_updated_at CASCADE;
-DROP FUNCTION IF EXISTS validate_timetable_period CASCADE;
+DROP FUNCTION IF EXISTS validate_timetable_entry CASCADE;
 
 -- STEP 3: DROP ALL INDEXES
 DROP INDEX IF EXISTS idx_admins_role;
@@ -36,8 +36,9 @@ DROP INDEX IF EXISTS idx_posts_visibility;
 DROP INDEX IF EXISTS idx_assignments_subject;
 DROP INDEX IF EXISTS idx_submissions_assignment;
 DROP INDEX IF EXISTS idx_resources_subject;
+DROP INDEX IF EXISTS idx_batch_semester_subjects_validation;
 
--- STEP 4: DROP TABLES (in dependency-safe reverse order)
+-- STEP 4: DROP TABLES (in reverse dependency order)
 DROP TABLE IF EXISTS assignment_submissions CASCADE;
 DROP TABLE IF EXISTS assignments CASCADE;
 DROP TABLE IF EXISTS resources CASCADE;
@@ -63,5 +64,5 @@ DROP TYPE IF EXISTS attendance_status CASCADE;
 DROP TYPE IF EXISTS admin_role CASCADE;
 DROP TYPE IF EXISTS year_level CASCADE;
 
--- STEP 6: DROP EXTENSION (if not used elsewhere)
+-- STEP 6: DROP EXTENSION
 DROP EXTENSION IF EXISTS btree_gist CASCADE;

@@ -136,27 +136,6 @@ CREATE TABLE timetable_entries (
   UNIQUE(batch_id, semester_no, weekday, period_id)
 );
 
--- Trigger function to validate period_id in timetable_entries
-CREATE OR REPLACE FUNCTION validate_timetable_period()
-RETURNS TRIGGER AS $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM periods p
-    WHERE p.id = NEW.period_id
-    AND p.batch_id = NEW.batch_id
-    AND p.semester_no = NEW.semester_no
-  ) THEN
-    RAISE EXCEPTION 'Invalid period_id: period does not match batch_id and semester_no';
-  END IF;
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
--- Apply trigger to timetable_entries
-CREATE TRIGGER trigger_validate_timetable_period
-BEFORE INSERT OR UPDATE ON timetable_entries
-FOR EACH ROW EXECUTE FUNCTION validate_timetable_period();
-
 -- Attendance Sessions
 CREATE TABLE attendance_sessions (
   id SERIAL PRIMARY KEY,
@@ -261,7 +240,37 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Apply triggers
+-- Trigger function to validate timetable_entries
+CREATE OR REPLACE FUNCTION validate_timetable_entry()
+RETURNS TRIGGER AS $$
+BEGIN
+  -- Validate period_id
+  IF NOT EXISTS (
+    SELECT 1 FROM periods p
+    WHERE p.id = NEW.period_id
+    AND p.batch_id = NEW.batch_id
+    AND p.semester_no = NEW.semester_no
+  ) THEN
+    RAISE EXCEPTION 'Invalid period_id: period does not match batch_id and semester_no';
+  END IF;
+
+  -- Validate subject_id and faculty_id
+  IF NOT EXISTS (
+    SELECT 1
+    FROM batch_semester_subjects bss
+    WHERE bss.batch_id = NEW.batch_id
+    AND bss.semester_no = NEW.semester_no
+    AND bss.subject_id = NEW.subject_id
+    AND bss.faculty_id = NEW.faculty_id
+  ) THEN
+    RAISE EXCEPTION 'Invalid subject_id or faculty_id: not assigned to this batch and semester';
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Apply triggers for updated_at
 CREATE TRIGGER trigger_update_updated_at_admins
 BEFORE UPDATE ON admins
 FOR EACH ROW EXECUTE FUNCTION update_updated_at();
@@ -298,6 +307,11 @@ CREATE TRIGGER trigger_update_updated_at_resources
 BEFORE UPDATE ON resources
 FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
+-- Apply trigger for timetable_entries validation
+CREATE TRIGGER trigger_validate_timetable_entry
+BEFORE INSERT OR UPDATE ON timetable_entries
+FOR EACH ROW EXECUTE FUNCTION validate_timetable_entry();
+
 -- Indexes
 CREATE INDEX idx_admins_role ON admins(role);
 CREATE INDEX idx_admins_college ON admins(college_id);
@@ -320,3 +334,6 @@ CREATE INDEX idx_posts_visibility ON posts(visibility_type, visibility_id);
 CREATE INDEX idx_assignments_subject ON assignments(batch_semester_subject_id);
 CREATE INDEX idx_submissions_assignment ON assignment_submissions(assignment_id);
 CREATE INDEX idx_resources_subject ON resources(batch_semester_subject_id);
+
+-- Additional index for timetable_entries validation
+CREATE INDEX idx_batch_semester_subjects_validation ON batch_semester_subjects(batch_id, semester_no, subject_id, faculty_id);

@@ -64,7 +64,6 @@ export interface Batch {
   batch_year: number;
   students_count: number;
   current_year: '1st' | '2nd' | '3rd' | '4th';
-  current_semester: number;
   room_number: string;
   faculty_incharge_name: string | null;
 }
@@ -111,14 +110,15 @@ export interface Subject {
 export interface Period {
   id: number;
   batch_id: number;
+  semester_no: number;
   name: string;
-  time: string; // Changed from time_slot to time to match frontend and backend response
+  time: string; // Format: 'HH:MM-HH:MM'
 }
 
 export interface TimetableEntry {
   id: number;
   batch_id: number;
-  weekday: string;
+  weekday: 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday' | 'Sunday';
   period_id: number;
   subject_id: number;
   semester_no: number;
