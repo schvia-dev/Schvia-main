@@ -2,18 +2,7 @@ import { Batch } from '../types';
 
 const BASE = '/web';
 
-// Helper to convert current_year to current_semester (assume first semester of the year)
-const yearToSemester = (year: '1st' | '2nd' | '3rd' | '4th'): number => {
-  const yearMap: Record<'1st' | '2nd' | '3rd' | '4th', number> = {
-    '1st': 1, // Semester 1
-    '2nd': 3, // Semester 3
-    '3rd': 5, // Semester 5
-    '4th': 7, // Semester 7
-  };
-  return yearMap[year];
-};
-
-// Helper to convert current_semester to current_year
+// Helper to compute current_year from current_semester
 const semesterToYear = (semester: number): '1st' | '2nd' | '3rd' | '4th' => {
   if (semester <= 2) return '1st';
   if (semester <= 4) return '2nd';
@@ -27,6 +16,9 @@ export const getBatches = async (
   department = '',
   batch = ''
 ): Promise<Batch[]> => {
+  if (!college_id) {
+    throw new Error('College ID is required.');
+  }
   const params = new URLSearchParams();
   params.set('college_id', String(college_id));
   if (search) params.set('search', search);
@@ -49,7 +41,7 @@ export const getBatches = async (
     batch_year: b.batch_year,
     students_count: b.students_count || 0,
     current_year: b.current_year,
-    current_semester: yearToSemester(b.current_year),
+    current_semester: b.current_semester,
     room_number: b.room_number || 'N/A',
     faculty_incharge_name: b.faculty_incharge_name || null,
   }));
@@ -62,6 +54,9 @@ export const addBatch = async (
   batch_year: number,
   current_semester: number
 ): Promise<Batch> => {
+  if (!batch_code || !name || !department_id || !batch_year || !current_semester) {
+    throw new Error('All fields (batch_code, name, department_id, batch_year, current_semester) are required.');
+  }
   const current_year = semesterToYear(current_semester);
   const res = await fetch(`${BASE}/addbatch`, {
     method: 'POST',
@@ -71,6 +66,7 @@ export const addBatch = async (
       name,
       batch_year,
       current_year,
+      current_semester,
       department_id,
       room_number: 'N/A',
       faculty_incharge: null,
@@ -97,7 +93,7 @@ export const addBatch = async (
     batch_year: batch.batch_year,
     students_count: batch.students_count || 0,
     current_year: batch.current_year,
-    current_semester: yearToSemester(batch.current_year),
+    current_semester: batch.current_semester,
     room_number: batch.room_number || 'N/A',
     faculty_incharge_name: batch.faculty_incharge_name || null,
   };
@@ -111,6 +107,9 @@ export const updateBatch = async (
   batch_year: number,
   current_semester: number
 ): Promise<Batch> => {
+  if (!id || !batch_code || !name || !department_id || !batch_year || !current_semester) {
+    throw new Error('All fields (id, batch_code, name, department_id, batch_year, current_semester) are required.');
+  }
   const current_year = semesterToYear(current_semester);
   const res = await fetch(`${BASE}/editbatch/${id}`, {
     method: 'PUT',
@@ -120,6 +119,7 @@ export const updateBatch = async (
       name,
       batch_year,
       current_year,
+      current_semester,
       department_id,
       room_number: 'N/A',
       faculty_incharge: null,
@@ -149,13 +149,16 @@ export const updateBatch = async (
     batch_year: batch.batch_year,
     students_count: batch.students_count || 0,
     current_year: batch.current_year,
-    current_semester: yearToSemester(batch.current_year),
+    current_semester: batch.current_semester,
     room_number: batch.room_number || 'N/A',
     faculty_incharge_name: batch.faculty_incharge_name || null,
   };
 };
 
 export const deleteBatch = async (id: number): Promise<void> => {
+  if (!id) {
+    throw new Error('Batch ID is required.');
+  }
   const res = await fetch(`${BASE}/deletebatch/${id}`, {
     method: 'DELETE',
   });
@@ -170,6 +173,9 @@ export const deleteBatch = async (id: number): Promise<void> => {
 };
 
 export const fetchDepartmentOptions = async (college_id: number): Promise<{ value: string; label: string }[]> => {
+  if (!college_id) {
+    throw new Error('College ID is required.');
+  }
   const res = await fetch(`${BASE}/fetchdepartments?college_id=${college_id}`);
   if (!res.ok) {
     const text = await res.text();
@@ -184,6 +190,9 @@ export const fetchDepartmentOptions = async (college_id: number): Promise<{ valu
 };
 
 export const fetchBatchYearOptions = async (college_id: number): Promise<{ value: string; label: string }[]> => {
+  if (!college_id) {
+    throw new Error('College ID is required.');
+  }
   const res = await fetch(`${BASE}/fetchbatchyears?college_id=${college_id}`);
   if (!res.ok) {
     const text = await res.text();

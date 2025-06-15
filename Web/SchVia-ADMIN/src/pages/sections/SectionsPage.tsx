@@ -28,7 +28,6 @@ import {
 const BatchesPage: React.FC = () => {
   const { user } = useAuth();
   const collegeId = user?.college_id;
-  if (!collegeId) return null;
 
   // Filters + data
   const [searchQuery, setSearchQuery] = useState('');
@@ -60,11 +59,15 @@ const BatchesPage: React.FC = () => {
   const isCollegeAdmin = user?.role === 'college';
   const isDepartmentAdmin = user?.role === 'department';
   const isClassAdmin = user?.role === 'class';
-  const isRestrictedAdmin = isClassAdmin; // Only class admin is read-only
+  const isRestrictedAdmin = isClassAdmin;
   const canPerformCrud = isCollegeAdmin || isDepartmentAdmin;
 
   // Load department & batch filters
   useEffect(() => {
+    if (!collegeId) {
+      setErrorMsg('College ID is missing. Please log in again.');
+      return;
+    }
     if (isDepartmentAdmin || isClassAdmin) {
       setDepartmentOptions([
         { value: String(user.department_id), label: user.department_name || 'My Department' },
@@ -83,10 +86,11 @@ const BatchesPage: React.FC = () => {
         }
       })();
     }
-  }, []);
+  }, [collegeId, isDepartmentAdmin, isClassAdmin, user?.department_id, user?.department_name]);
 
   // Load batches on filter change
   useEffect(() => {
+    if (!collegeId) return;
     (async () => {
       setIsLoading(true);
       try {
@@ -106,6 +110,7 @@ const BatchesPage: React.FC = () => {
   ) => {
     const { name, value } = e.target;
     setFormData(fd => ({ ...fd, [name]: value }));
+    setErrorMsg(null); // Clear error on input change
   };
 
   const openAddModal = () => {
@@ -114,7 +119,7 @@ const BatchesPage: React.FC = () => {
       batch_code: '',
       name: '',
       department_id: isDepartmentAdmin ? String(user.department_id) : '',
-      batch_year: '',
+      batch_year: String(new Date().getFullYear()),
       current_semester: '1',
     });
     setIsAddModalOpen(true);
@@ -147,41 +152,52 @@ const BatchesPage: React.FC = () => {
     setIsDeleteModalOpen(true);
   };
 
-  const handleAdd = async () => {
-    if (!canPerformCrud) return;
+  const validateForm = () => {
     const { batch_code, name, department_id, batch_year, current_semester } = formData;
-    if (!batch_code.trim()) {
-      setErrorMsg('Batch code is required.');
-      return;
-    }
-    if (!name.trim()) {
-      setErrorMsg('Batch name is required.');
-      return;
-    }
+    if (!batch_code.trim()) return 'Batch code is required.';
+    if (!name.trim()) return 'Batch name is required.';
     const deptId = Number(department_id);
+    if (!deptId || isNaN(deptId)) return 'Please select a valid department.';
     const batchYearNum = Number(batch_year);
-    const semesterNum = Number(current_semester);
-    if (!deptId || deptId <= 0) {
-      setErrorMsg('Please select a valid department.');
-      return;
-    }
     if (!batchYearNum || batchYearNum < 2000 || batchYearNum > new Date().getFullYear() + 4) {
-      setErrorMsg('Please enter a valid batch year (2000 or later).');
-      return;
+      return 'Please enter a valid batch year (2000 or later).';
     }
+    const semesterNum = Number(current_semester);
     if (!semesterNum || semesterNum < 1 || semesterNum > 8) {
-      setErrorMsg('Please select a valid semester (1–8).');
-      return;
+      return 'Please select a valid semester (1–8).';
     }
     if (isDepartmentAdmin && deptId !== user.department_id) {
-      setErrorMsg('You can only add batches to your department.');
+      return 'You can only manage batches in your department.';
+    }
+    return null;
+  };
+
+  const handleAdd = async () => {
+    if (!canPerformCrud) return;
+    const error = validateForm();
+    if (error) {
+      setErrorMsg(error);
       return;
     }
     try {
-      const newBatch = await addBatch(batch_code, name, deptId, batchYearNum, semesterNum);
+      const { batch_code, name, department_id, batch_year, current_semester } = formData;
+      const newBatch = await addBatch(
+        batch_code.trim(),
+        name.trim(),
+        Number(department_id),
+        Number(batch_year),
+        Number(current_semester)
+      );
       setBatches(prev => [...prev, newBatch]);
       setIsAddModalOpen(false);
-      setFormData({ batch_code: '', name: '', department_id: isDepartmentAdmin ? String(user.department_id) : '', batch_year: '', current_semester: '1' });
+      setFormData({
+        batch_code: '',
+        name: '',
+        department_id: isDepartmentAdmin ? String(user.department_id) : '',
+        batch_year: String(new Date().getFullYear()),
+        current_semester: '1',
+      });
+      setErrorMsg(null);
     } catch (err: any) {
       setErrorMsg(err.message || 'Failed to add batch.');
     }
@@ -189,40 +205,32 @@ const BatchesPage: React.FC = () => {
 
   const handleEdit = async () => {
     if (!canPerformCrud || !selectedBatch) return;
-    const { batch_code, name, department_id, batch_year, current_semester } = formData;
-    if (!batch_code.trim()) {
-      setErrorMsg('Batch code is required.');
-      return;
-    }
-    if (!name.trim()) {
-      setErrorMsg('Batch name is required.');
-      return;
-    }
-    const deptId = Number(department_id);
-    const batchYearNum = Number(batch_year);
-    const semesterNum = Number(current_semester);
-    if (!deptId || deptId <= 0) {
-      setErrorMsg('Please select a valid department.');
-      return;
-    }
-    if (!batchYearNum || batchYearNum < 2000 || batchYearNum > new Date().getFullYear() + 4) {
-      setErrorMsg('Please enter a valid batch year (2000 or later).');
-      return;
-    }
-    if (!semesterNum || semesterNum < 1 || semesterNum > 8) {
-      setErrorMsg('Please select a valid semester (1–8).');
-      return;
-    }
-    if (isDepartmentAdmin && deptId !== user.department_id) {
-      setErrorMsg('You can only edit batches in your department.');
+    const error = validateForm();
+    if (error) {
+      setErrorMsg(error);
       return;
     }
     try {
-      const updated = await updateBatch(selectedBatch.id, batch_code, name, deptId, batchYearNum, semesterNum);
+      const { batch_code, name, department_id, batch_year, current_semester } = formData;
+      const updated = await updateBatch(
+        selectedBatch.id,
+        batch_code.trim(),
+        name.trim(),
+        Number(department_id),
+        Number(batch_year),
+        Number(current_semester)
+      );
       setBatches(prev => prev.map(b => (b.id === updated.id ? updated : b)));
       setIsEditModalOpen(false);
       setSelectedBatch(null);
-      setFormData({ batch_code: '', name: '', department_id: isDepartmentAdmin ? String(user.department_id) : '', batch_year: '', current_semester: '1' });
+      setFormData({
+        batch_code: '',
+        name: '',
+        department_id: isDepartmentAdmin ? String(user.department_id) : '',
+        batch_year: String(new Date().getFullYear()),
+        current_semester: '1',
+      });
+      setErrorMsg(null);
     } catch (err: any) {
       setErrorMsg(err.message || 'Failed to update batch.');
     }
@@ -235,6 +243,7 @@ const BatchesPage: React.FC = () => {
       setBatches(prev => prev.filter(b => b.id !== selectedBatch.id));
       setIsDeleteModalOpen(false);
       setSelectedBatch(null);
+      setErrorMsg(null);
     } catch (err: any) {
       setErrorMsg(err.message || 'Failed to delete batch.');
     }
@@ -303,7 +312,7 @@ const BatchesPage: React.FC = () => {
           )}
         </div>
       ),
-      className: 'w-48', // Adjusted width since fewer buttons
+      className: 'w-48',
     },
   ];
 
@@ -317,6 +326,10 @@ const BatchesPage: React.FC = () => {
     { value: '7', label: 'Semester 7' },
     { value: '8', label: 'Semester 8' },
   ];
+
+  if (!collegeId) {
+    return <div className="text-red-500">Error: College ID is missing. Please log in again.</div>;
+  }
 
   return (
     <div className="space-y-6">
@@ -339,7 +352,7 @@ const BatchesPage: React.FC = () => {
       </div>
 
       <Card>
-        {/* Filters (show only for college admin) */}
+        {/* Filters */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
           {isCollegeAdmin && (
             <>

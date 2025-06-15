@@ -58,7 +58,7 @@ const StudentsPage: React.FC = () => {
 
   // Dropdown options
   const [deptOptions, setDeptOptions] = useState<{ value: string; label: string }[]>([]);
-  const [sectionOptions, setSectionOptions] = useState<{ value: string; label: string }[]>([]);
+  const [sectionOptions, setSectionOptions] = useState<{ value: string; label: string; current_semester?: number }[]>([]);
 
   // Modal & form state
   const [isAddOpen, setIsAddOpen] = useState(false);
@@ -72,6 +72,7 @@ const StudentsPage: React.FC = () => {
     email: '',
     batch_id: '',
     current_year: '',
+    current_semester: '',
     password: '',
     phone: '',
     address: '',
@@ -123,7 +124,16 @@ const StudentsPage: React.FC = () => {
   // Form input handler
   const onChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    setForm(f => ({ ...f, [name]: value }));
+    if (name === 'batch_id') {
+      const selectedBatch = sectionOptions.find(opt => opt.value === value);
+      setForm(f => ({
+        ...f,
+        [name]: value,
+        current_semester: selectedBatch?.current_semester?.toString() || f.current_semester
+      }));
+    } else {
+      setForm(f => ({ ...f, [name]: value }));
+    }
   };
 
   // Open modals
@@ -134,6 +144,7 @@ const StudentsPage: React.FC = () => {
       email: '',
       batch_id: '',
       current_year: '',
+      current_semester: '',
       password: generateRandomPassword(),
       phone: '',
       address: '',
@@ -152,6 +163,7 @@ const StudentsPage: React.FC = () => {
       email: stu.email,
       batch_id: stu.batch_id.toString(),
       current_year: stu.current_year.toString(),
+      current_semester: stu.current_semester.toString(),
       password: '',
       phone: stu.phone || '',
       address: stu.address || '',
@@ -173,13 +185,18 @@ const StudentsPage: React.FC = () => {
 
   // CRUD handlers
   const handleAdd = async () => {
-    const { id, name, email, batch_id, current_year, password, phone, address, pan_number, aadhar_number, father_phone, mother_phone } = form;
-    if (!id || !name || !email || !batch_id || !current_year || !password) {
-      setNotify({ type: 'error', message: 'Please fill all required fields (ID, Name, Email, Batch, Current Year, Password).' });
+    const { id, name, email, batch_id, current_year, current_semester, password, phone, address, pan_number, aadhar_number, father_phone, mother_phone } = form;
+    if (!id || !name || !email || !batch_id || !current_year || !current_semester || !password) {
+      setNotify({ type: 'error', message: 'Please fill all required fields (ID, Name, Email, Batch, Current Year, Current Semester, Password).' });
       return;
     }
     if (!isValidEmail(email)) {
       setNotify({ type: 'error', message: 'Please enter a valid email address.' });
+      return;
+    }
+    const semesterNum = parseInt(current_semester, 10);
+    if (isNaN(semesterNum) || semesterNum < 1 || semesterNum > 8) {
+      setNotify({ type: 'error', message: 'Current Semester must be between 1 and 8.' });
       return;
     }
     try {
@@ -190,6 +207,7 @@ const StudentsPage: React.FC = () => {
         email,
         parseInt(batch_id, 10),
         current_year,
+        semesterNum,
         password,
         phone || 'N/A',
         address || 'N/A',
@@ -209,13 +227,18 @@ const StudentsPage: React.FC = () => {
 
   const handleEdit = async () => {
     if (!selected) return;
-    const { name, email, batch_id, current_year, phone, address, pan_number, aadhar_number, father_phone, mother_phone } = form;
-    if (!name || !email || !batch_id || !current_year) {
-      setNotify({ type: 'error', message: 'Please fill all required fields (Name, Email, Batch, Current Year).' });
+    const { name, email, batch_id, current_year, current_semester, phone, address, pan_number, aadhar_number, father_phone, mother_phone } = form;
+    if (!name || !email || !batch_id || !current_year || !current_semester) {
+      setNotify({ type: 'error', message: 'Please fill all required fields (Name, Email, Batch, Current Year, Current Semester).' });
       return;
     }
     if (!isValidEmail(email)) {
       setNotify({ type: 'error', message: 'Please enter a valid email address.' });
+      return;
+    }
+    const semesterNum = parseInt(current_semester, 10);
+    if (isNaN(semesterNum) || semesterNum < 1 || semesterNum > 8) {
+      setNotify({ type: 'error', message: 'Current Semester must be between 1 and 8.' });
       return;
     }
     try {
@@ -226,6 +249,7 @@ const StudentsPage: React.FC = () => {
         email,
         parseInt(batch_id, 10),
         current_year,
+        semesterNum,
         phone || 'N/A',
         address || 'N/A',
         pan_number || 'N/A',
@@ -298,6 +322,14 @@ const StudentsPage: React.FC = () => {
       accessor: (r: Student) => (
         <Badge variant="primary" size="sm">
           <span className="text-[#6A5ACD] dark:text-[#1a1a40]">{r.current_year}</span>
+        </Badge>
+      )
+    },
+    {
+      header: 'Current Semester',
+      accessor: (r: Student) => (
+        <Badge variant="primary" size="sm">
+          <span className="text-[#6A5ACD] dark:text-[#1a1a40]">{r.current_semester}</span>
         </Badge>
       )
     },
@@ -466,6 +498,25 @@ const StudentsPage: React.FC = () => {
               required
               className="mb-4"
             />
+            <SelectInput
+              label="Current Semester"
+              name="current_semester"
+              value={form.current_semester}
+              options={[
+                { value: '', label: 'Select Semester' },
+                { value: '1', label: '1st Semester' },
+                { value: '2', label: '2nd Semester' },
+                { value: '3', label: '3rd Semester' },
+                { value: '4', label: '4th Semester' },
+                { value: '5', label: '5th Semester' },
+                { value: '6', label: '6th Semester' },
+                { value: '7', label: '7th Semester' },
+                { value: '8', label: '8th Semester' }
+              ]}
+              onChange={onChange}
+              required
+              className="mb-4"
+            />
           </div>
         </div>
       </Modal>
@@ -534,6 +585,25 @@ const StudentsPage: React.FC = () => {
                 { value: '2nd', label: '2nd Year' },
                 { value: '3rd', label: '3rd Year' },
                 { value: '4th', label: '4th Year' }
+              ]}
+              onChange={onChange}
+              required
+              className="mb-4"
+            />
+            <SelectInput
+              label="Current Semester"
+              name="current_semester"
+              value={form.current_semester}
+              options={[
+                { value: '', label: 'Select Semester' },
+                { value: '1', label: '1st Semester' },
+                { value: '2', label: '2nd Semester' },
+                { value: '3', label: '3rd Semester' },
+                { value: '4', label: '4th Semester' },
+                { value: '5', label: '5th Semester' },
+                { value: '6', label: '6th Semester' },
+                { value: '7', label: '7th Semester' },
+                { value: '8', label: '8th Semester' }
               ]}
               onChange={onChange}
               required
@@ -611,3 +681,4 @@ const StudentsPage: React.FC = () => {
 };
 
 export default StudentsPage;
+

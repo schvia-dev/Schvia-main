@@ -607,6 +607,7 @@ router.get('/fetchbatches', async (req: Request, res: Response) => {
         b.name,
         b.batch_year,
         b.current_year,
+        b.current_semester,
         b.room_number,
         b.department_id,
         d.name AS department_name,
@@ -670,21 +671,21 @@ router.get(['/fetchbatchyears', '/fetchBatchYears'], async (req: Request, res: R
   }
 });
 
-// /addbatch (updated)
+// /addbatch
 router.post('/addbatch', async (req: Request, res: Response) => {
-  const { batch_code, name, batch_year, current_year, department_id, room_number, faculty_incharge } = req.body;
-  if (!batch_code || !name || !batch_year || !current_year || !department_id) {
-    return res.status(400).json({ message: 'batch_code, name, batch_year, current_year, and department_id are required.' });
+  const { batch_code, name, batch_year, current_year, current_semester, department_id, room_number, faculty_incharge } = req.body;
+  if (!batch_code || !name || !batch_year || !current_semester || !department_id) {
+    return res.status(400).json({ message: 'batch_code, name, batch_year, current_semester, and department_id are required.' });
   }
   try {
     const result: QueryResult<any> = await pool.query(
-      `INSERT INTO batches (batch_code, name, batch_year, current_year, department_id, room_number, faculty_incharge)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       RETURNING id, batch_code, name, batch_year, current_year, department_id, room_number, faculty_incharge,
-                 (SELECT name FROM departments WHERE id = $5) AS department_name,
+      `INSERT INTO batches (batch_code, name, batch_year, current_year, current_semester, department_id, room_number, faculty_incharge)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id, batch_code, name, batch_year, current_year, current_semester, department_id, room_number, faculty_incharge,
+                 (SELECT name FROM departments WHERE id = $6) AS department_name,
                  (SELECT COUNT(*) FROM students WHERE batch_id = currval('batches_id_seq')) AS students_count,
-                 (SELECT name FROM faculties WHERE id = $7) AS faculty_incharge_name;`,
-      [batch_code, name, batch_year, current_year, department_id, room_number || 'N/A', faculty_incharge || null]
+                 (SELECT name FROM faculties WHERE id = $8) AS faculty_incharge_name;`,
+      [batch_code, name, batch_year, current_year, current_semester, department_id, room_number || 'N/A', faculty_incharge || null]
     );
     return res.json({ batch: result.rows[0] });
   } catch (err: any) {
@@ -699,12 +700,12 @@ router.post('/addbatch', async (req: Request, res: Response) => {
   }
 });
 
-// /editbatch/:id (unchanged)
+// /editbatch/:id
 router.put('/editbatch/:id', async (req: Request, res: Response) => {
   const id = Number(req.params.id);
-  const { batch_code, name, batch_year, current_year, department_id, room_number, faculty_incharge } = req.body;
-  if (!batch_code || !name || !batch_year || !current_year || !department_id) {
-    return res.status(400).json({ message: 'batch_code, name, batch_year, current_year, and department_id are required.' });
+  const { batch_code, name, batch_year, current_year, current_semester, department_id, room_number, faculty_incharge } = req.body;
+  if (!batch_code || !name || !batch_year || !current_semester || !department_id) {
+    return res.status(400).json({ message: 'batch_code, name, batch_year, current_semester, and department_id are required.' });
   }
   try {
     const result: QueryResult<any> = await pool.query(
@@ -713,14 +714,16 @@ router.put('/editbatch/:id', async (req: Request, res: Response) => {
            name = $2,
            batch_year = $3,
            current_year = $4,
-           department_id = $5,
-           room_number = $6,
-           faculty_incharge = $7
-       WHERE id = $8
-       RETURNING id, batch_code, name, batch_year, current_year, department_id, room_number, faculty_incharge,
-                 (SELECT name FROM departments WHERE id = $5) AS department_name,
-                 (SELECT COUNT(*) FROM students WHERE batch_id = $8) AS students_count;`,
-      [batch_code, name, batch_year, current_year, department_id, room_number || 'N/A', faculty_incharge || null, id]
+           current_semester = $5,
+           department_id = $6,
+           room_number = $7,
+           faculty_incharge = $8
+       WHERE id = $9
+       RETURNING id, batch_code, name, batch_year, current_year, current_semester, department_id, room_number, faculty_incharge,
+                 (SELECT name FROM departments WHERE id = $6) AS department_name,
+                 (SELECT COUNT(*) FROM students WHERE batch_id = $9) AS students_count,
+                 (SELECT name FROM faculties WHERE id = $8) AS faculty_incharge_name;`,
+      [batch_code, name, batch_year, current_year, current_semester, department_id, room_number || 'N/A', faculty_incharge || null, id]
     );
     if (result.rowCount === 0) {
       return res.status(404).json({ message: 'Batch not found.' });
@@ -777,6 +780,7 @@ router.get('/fetchstudents', async (req: Request, res: Response) => {
         s.email,
         s.phone,
         s.current_year,
+        s.current_semester, -- Add current_semester
         s.batch_id,
         b.batch_code AS batch_name,
         b.department_id,
@@ -812,32 +816,48 @@ router.get('/fetchstudents', async (req: Request, res: Response) => {
 });
 
 router.post('/addstudent', async (req: Request, res: Response) => {
-  const { id, name, email, batch_id, current_year, phone, address, pan_number, aadhar_number, father_phone, mother_phone, password } = req.body;
-  if (!id || !name || !email || !batch_id || !current_year || !password) {
-    return res.status(400).json({ message: 'id, name, email, batch_id, current_year, and password are required.' });
+  const { id, name, email, batch_id, current_year, current_semester, phone, address, pan_number, aadhar_number, father_phone, mother_phone, password } = req.body;
+  if (!id || !name || !email || !batch_id || !current_year || !current_semester || !password) {
+    return res.status(400).json({ message: 'id, name, email, batch_id, current_year, current_semester, and password are required.' });
+  }
+  if (isNaN(current_semester) || current_semester < 1 || current_semester > 8) {
+    return res.status(400).json({ message: 'current_semester must be between 1 and 8.' });
   }
 
   try {
-    // Insert the student without subqueries
     const result = await pool.query(
-      `INSERT INTO students (id, name, email, batch_id, current_year, phone, address, pan_number, aadhar_number, father_phone, mother_phone, password)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      `INSERT INTO students (id, name, email, batch_id, current_year, current_semester, phone, address, pan_number, aadhar_number, father_phone, mother_phone, password)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
        RETURNING 
          id, 
          name, 
          email,
          batch_id,
          current_year,
+         current_semester, -- Add current_semester
          phone, 
          address, 
          pan_number, 
          aadhar_number, 
          father_phone, 
          mother_phone`,
-      [id, name, email, batch_id, current_year, phone || 'N/A', address || 'N/A', pan_number || 'N/A', aadhar_number || 'N/A', father_phone || 'N/A', mother_phone || 'N/A', password]
+      [
+        id,
+        name,
+        email,
+        batch_id,
+        current_year,
+        current_semester,
+        phone || 'N/A',
+        address || 'N/A',
+        pan_number || 'N/A',
+        aadhar_number || 'N/A',
+        father_phone || 'N/A',
+        mother_phone || 'N/A',
+        password,
+      ]
     );
 
-    // Fetch batch_name and department_name separately
     const student = result.rows[0];
     const batchResult = await pool.query(
       `SELECT 
@@ -849,7 +869,6 @@ router.post('/addstudent', async (req: Request, res: Response) => {
       [student.batch_id]
     );
 
-    // Combine the results
     if (batchResult.rows.length > 0) {
       student.batch_name = batchResult.rows[0].batch_name;
       student.department_name = batchResult.rows[0].department_name;
@@ -867,15 +886,21 @@ router.post('/addstudent', async (req: Request, res: Response) => {
     if (err.code === '23503') {
       return res.status(400).json({ message: 'Invalid batch_id.' });
     }
+    if (err.code === '23502') {
+      return res.status(400).json({ message: `Missing required field: ${err.column}` });
+    }
     return res.status(500).json({ message: 'Failed to add student.' });
   }
 });
 
 router.put('/editstudent/:id', async (req: Request, res: Response) => {
   const id = req.params.id;
-  const { name, email, batch_id, current_year, phone, address, pan_number, aadhar_number, father_phone, mother_phone } = req.body;
-  if (!name || !email || !batch_id || !current_year) {
-    return res.status(400).json({ message: 'name, email, batch_id, and current_year are required.' });
+  const { name, email, batch_id, current_year, current_semester, phone, address, pan_number, aadhar_number, father_phone, mother_phone } = req.body;
+  if (!name || !email || !batch_id || !current_year || !current_semester) {
+    return res.status(400).json({ message: 'name, email, batch_id, current_year, and current_semester are required.' });
+  }
+  if (isNaN(current_semester) || current_semester < 1 || current_semester > 8) {
+    return res.status(400).json({ message: 'current_semester must be between 1 and 8.' });
   }
 
   const updates = [
@@ -883,8 +908,9 @@ router.put('/editstudent/:id', async (req: Request, res: Response) => {
     'email = $2',
     'batch_id = $3',
     'current_year = $4',
+    'current_semester = $5', // Add current_semester
   ];
-  const params: any[] = [name, email, batch_id, current_year];
+  const params: any[] = [name, email, batch_id, current_year, current_semester];
 
   if (phone) { updates.push(`phone = $${params.length + 1}`); params.push(phone); }
   if (address) { updates.push(`address = $${params.length + 1}`); params.push(address); }
@@ -895,7 +921,6 @@ router.put('/editstudent/:id', async (req: Request, res: Response) => {
   params.push(id);
 
   try {
-    // Update the student without subqueries
     const result = await pool.query(
       `UPDATE students
        SET ${updates.join(', ')},
@@ -907,6 +932,7 @@ router.put('/editstudent/:id', async (req: Request, res: Response) => {
          email,
          batch_id,
          current_year,
+         current_semester, -- Add current_semester
          phone, 
          address, 
          pan_number, 
@@ -919,7 +945,6 @@ router.put('/editstudent/:id', async (req: Request, res: Response) => {
       return res.status(404).json({ message: 'Student not found.' });
     }
 
-    // Fetch batch_name and department_name separately
     const student = result.rows[0];
     const batchResult = await pool.query(
       `SELECT 
@@ -931,7 +956,6 @@ router.put('/editstudent/:id', async (req: Request, res: Response) => {
       [student.batch_id]
     );
 
-    // Combine the results
     if (batchResult.rows.length > 0) {
       student.batch_name = batchResult.rows[0].batch_name;
       student.department_name = batchResult.rows[0].department_name;
@@ -949,6 +973,9 @@ router.put('/editstudent/:id', async (req: Request, res: Response) => {
     if (err.code === '23503') {
       return res.status(400).json({ message: 'Invalid batch_id.' });
     }
+    if (err.code === '23502') {
+      return res.status(400).json({ message: `Missing required field: ${err.column}` });
+    }
     return res.status(500).json({ message: 'Failed to update student.' });
   }
 });
@@ -964,6 +991,46 @@ router.delete('/deletestudent/:id', async (req: Request, res: Response) => {
   } catch (err) {
     console.error('Delete Student Error:', err);
     return res.status(500).json({ message: 'Failed to delete student.' });
+  }
+});
+
+router.post(['/studentForgotPassword', '/studentforgotpassword'], async (req: Request, res: Response) => {
+  const { rollNo } = req.body;
+  if (!rollNo) {
+    return res.status(400).json({ success: false, message: 'rollNo is required.' });
+  }
+
+  try {
+    const { rows } = await pool.query('SELECT * FROM students WHERE id = $1', [rollNo]);
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Student not found.' });
+    }
+    const student = rows[0];
+
+    const rawPassword = crypto.randomBytes(4).toString('hex');
+    await pool.query(
+      `UPDATE students
+         SET password = $1,
+             updated_at = NOW()
+       WHERE id = $2`,
+      [rawPassword, rollNo]
+    );
+
+    const message = `Hello ${student.name},\n\nYour new password is: ${rawPassword}\n\nPlease change it after login.\n\nRegards,\nSchVia Team`;
+    const subject = 'SchVia Password Reset';
+    const receiver =
+      process.env.DUMMY_EMAIL_TO_TEST && process.env.DUMMY_EMAIL_TO_TEST !== 'null'
+        ? process.env.DUMMY_EMAIL_TO_TEST
+        : student.email;
+    await sendMail(receiver, subject, message);
+
+    return res.json({
+      success: true,
+      message: `Password has been sent to ${student.email}`,
+    });
+  } catch (err) {
+    console.error('Student password reset error:', err);
+    return res.status(500).json({ success: false, message: 'Server error.' });
   }
 });
 
@@ -1906,21 +1973,23 @@ router.get('/getSemesterOptions', async (req: Request, res: Response) => {
   }
 });
 
-// Fetch Subject Options
+// Update Fetch Subject Options to include department_id
 router.get('/fetchSubjectOptions', async (req: Request, res: Response) => {
   const batchId = Number(req.query.batch_id);
   const semesterNo = Number(req.query.semester_no);
-  if (!batchId || !semesterNo) {
-    return res.status(400).json({ message: 'Missing batch_id or semester_no.' });
+  const departmentId = req.query.department_id ? Number(req.query.department_id) : undefined;
+  if (!batchId || !semesterNo || !departmentId) {
+    return res.status(400).json({ message: 'Missing batch_id, semester_no, or department_id.' });
   }
   try {
     const result = await pool.query(
       `SELECT s.id AS value, s.name AS label
        FROM subjects s
        JOIN batch_semester_subjects bss ON s.id = bss.subject_id
-       WHERE bss.batch_id = $1 AND bss.semester_no = $2
+       JOIN batches b ON b.id = bss.batch_id
+       WHERE bss.batch_id = $1 AND bss.semester_no = $2 AND b.department_id = $3
        ORDER BY s.name`,
-      [batchId, semesterNo]
+      [batchId, semesterNo, departmentId]
     );
     return res.json({ options: result.rows });
   } catch (err) {
@@ -1929,24 +1998,26 @@ router.get('/fetchSubjectOptions', async (req: Request, res: Response) => {
   }
 });
 
-// Fetch Faculty Options
+// Update Fetch Faculty Options to include department_id
 router.get('/fetchFacultyOptions', async (req: Request, res: Response) => {
   const batchId = Number(req.query.batch_id);
   const semesterNo = Number(req.query.semester_no);
+  const departmentId = req.query.department_id ? Number(req.query.department_id) : undefined;
   const subjectId = req.query.subject_id ? Number(req.query.subject_id) : undefined;
-  if (!batchId || !semesterNo) {
-    return res.status(400).json({ message: 'Missing batch_id or semester_no.' });
+  if (!batchId || !semesterNo || !departmentId) {
+    return res.status(400).json({ message: 'Missing batch_id, semester_no, or department_id.' });
   }
   try {
     let query = `
-      SELECT f.id AS value, f.name AS label
+      SELECT DISTINCT f.id AS value, f.name AS label
       FROM faculties f
       JOIN batch_semester_subjects bss ON f.id = bss.faculty_id
-      WHERE bss.batch_id = $1 AND bss.semester_no = $2
+      JOIN batches b ON b.id = bss.batch_id
+      WHERE bss.batch_id = $1 AND bss.semester_no = $2 AND b.department_id = $3
     `;
-    const params = [batchId, semesterNo];
+    const params = [batchId, semesterNo, departmentId];
     if (subjectId) {
-      query += ` AND bss.subject_id = $3`;
+      query += ` AND bss.subject_id = $4`;
       params.push(subjectId);
     }
     query += ` ORDER BY f.name`;
@@ -2253,4 +2324,82 @@ router.delete('/deleteTimetable', async (req: Request, res: Response) => {
     client.release();
   }
 });
+
+// New Route: Update Timetable Periods
+router.put('/updateTimetablePeriods', async (req: Request, res: Response) => {
+  const { batch_id, semester_no, times } = req.body;
+  if (!batch_id || !semester_no || !Array.isArray(times) || times.length === 0) {
+    return res.status(400).json({ message: 'Missing or invalid batch_id, semester_no, or times.' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Fetch department_id from batches
+    const batchQuery = await client.query(
+      `SELECT department_id FROM batches WHERE id = $1`,
+      [batch_id]
+    );
+    if (batchQuery.rowCount === 0) {
+      throw new Error('Invalid batch_id: Batch not found.');
+    }
+    const department_id = batchQuery.rows[0].department_id;
+
+    // Parse and validate times
+    const periods = times.map((time: string, index: number) => {
+      const match = /^(\d{2}):(\d{2})-(\d{2}):(\d{2})$/.exec(time.trim());
+      if (!match) {
+        throw new Error(`Invalid time format for period ${index + 1}: ${time}. Use HH:MM-HH:MM`);
+      }
+      const [, startHour, startMin, endHour, endMin] = match;
+      const startTime = `2000-01-01 ${startHour}:${startMin}:00`;
+      const endTime = `2000-01-01 ${endHour}:${endMin}:00`;
+      return {
+        name: `Period ${index + 1}`,
+        time_slot: `[${startTime},${endTime})`,
+      };
+    });
+
+    // Check for overlaps
+    for (let i = 0; i < periods.length; i++) {
+      for (let j = i + 1; j < periods.length; j++) {
+        const query = `SELECT $1::tsrange && $2::tsrange AS overlaps`;
+        const result = await client.query(query, [periods[i].time_slot, periods[j].time_slot]);
+        if (result.rows[0].overlaps) {
+          throw new Error(`Time slots ${periods[i].name} and ${periods[j].name} overlap`);
+        }
+      }
+    }
+
+    // Delete existing periods and timetable entries
+    await client.query(
+      `DELETE FROM timetable_entries WHERE batch_id = $1 AND semester_no = $2`,
+      [batch_id, semester_no]
+    );
+    await client.query(
+      `DELETE FROM periods WHERE batch_id = $1 AND semester_no = $2`,
+      [batch_id, semester_no]
+    );
+
+    // Insert new periods
+    for (const period of periods) {
+      await client.query(
+        `INSERT INTO periods (batch_id, semester_no, department_id, name, time_slot) 
+         VALUES ($1, $2, $3, $4, $5::tsrange)`,
+        [batch_id, semester_no, department_id, period.name, period.time_slot]
+      );
+    }
+
+    await client.query('COMMIT');
+    return res.status(200).json({ message: 'Timetable periods updated successfully' });
+  } catch (err: any) {
+    await client.query('ROLLBACK');
+    console.error('Update Timetable Periods Error:', err.stack);
+    return res.status(500).json({ message: err.message || 'Failed to update timetable periods' });
+  } finally {
+    client.release();
+  }
+});
+
 export default router;

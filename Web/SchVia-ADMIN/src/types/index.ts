@@ -1,3 +1,21 @@
+export interface Student {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  batch_id: number;
+  batch_name: string;
+  department_id: number;
+  department_name: string;
+  current_year: '1st' | '2nd' | '3rd' | '4th';
+  current_semester: number;
+  address: string;
+  pan_number: string;
+  aadhar_number: string;
+  father_phone: string;
+  mother_phone: string;
+}
+
 export interface Admin {
   id: number;
   name: string;
@@ -64,25 +82,9 @@ export interface Batch {
   batch_year: number;
   students_count: number;
   current_year: '1st' | '2nd' | '3rd' | '4th';
+  current_semester: number;
   room_number: string;
   faculty_incharge_name: string | null;
-}
-
-export interface Student {
-  id: string;
-  name: string;
-  email: string;
-  phone: string;
-  batch_id: number;
-  batch_name: string;
-  department_id: number;
-  department_name: string;
-  current_year: '1st' | '2nd' | '3rd' | '4th';
-  address: string;
-  pan_number: string;
-  aadhar_number: string;
-  father_phone: string;
-  mother_phone: string;
 }
 
 export interface Faculty {
@@ -125,6 +127,14 @@ export interface TimetableEntry {
   faculty_id: string;
   subject: string;
   faculty: string;
+}
+
+export interface Timetable {
+  batch_id: number;
+  semester_no: number;
+  department_name: string;
+  batch_name: string;
+  department_id: number; // Added to fix error 2339
 }
 
 export interface AttendanceSession {
@@ -171,3 +181,15 @@ export interface Option {
   value: string | number;
   label: string;
 }
+
+export interface Slot {
+  entryId?: number;
+  periodId: number;
+  time: string;
+  subjectId?: number;
+  facultyId?: string;
+  subject?: string;
+  faculty?: string;
+}
+
+export type DaySchedule = Record<string, Slot[]>;

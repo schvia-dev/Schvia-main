@@ -14,7 +14,12 @@ export async function getStudents(
   if (dept) params.append('dept', dept);
   if (batch) params.append('batch', batch);
 
-  const res = await fetch(`${BASE}/fetchstudents?${params}`);
+  const res = await fetch(`${BASE}/fetchstudents?${params}`, {
+    headers: {
+      'Authorization': `Bearer ${user.token}`,
+      'Content-Type': 'application/json',
+    },
+  });
   if (!res.ok) {
     const { message } = await res.json();
     throw new Error(message || 'Failed to fetch students');
@@ -30,7 +35,12 @@ export async function getStudentById(
 ): Promise<Student> {
   const params = new URLSearchParams({ college_id: String(collegeId) });
 
-  const res = await fetch(`${BASE}/student/${studentId}?${params}`);
+  const res = await fetch(`${BASE}/student/${studentId}?${params}`, {
+    headers: {
+      'Authorization': `Bearer ${user.token}`,
+      'Content-Type': 'application/json',
+    },
+  });
   if (!res.ok) {
     const { message } = await res.json();
     throw new Error(message || 'Failed to fetch student details');
@@ -46,6 +56,7 @@ export async function addStudent(
   email: string,
   batch_id: number,
   current_year: string,
+  current_semester: number,
   password: string,
   phone: string,
   address: string,
@@ -54,9 +65,14 @@ export async function addStudent(
   father_phone: string,
   mother_phone: string
 ): Promise<Student> {
+  if (isNaN(current_semester) || current_semester < 1 || current_semester > 8) {
+    throw new Error('Current semester must be between 1 and 8');
+  }
+
   const res = await fetch(`${BASE}/addstudent`, {
     method: 'POST',
     headers: {
+      'Authorization': `Bearer ${user.token}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
@@ -65,14 +81,15 @@ export async function addStudent(
       email,
       batch_id,
       current_year,
+      current_semester, // Include current_semester
       password,
       phone,
       address,
       pan_number,
       aadhar_number,
       father_phone,
-      mother_phone
-    })
+      mother_phone,
+    }),
   });
   if (!res.ok) {
     const { message } = await res.json();
@@ -89,6 +106,7 @@ export async function updateStudent(
   email: string,
   batch_id: number,
   current_year: string,
+  current_semester: number,
   phone: string,
   address: string,
   pan_number: string,
@@ -96,9 +114,14 @@ export async function updateStudent(
   father_phone: string,
   mother_phone: string
 ): Promise<Student> {
+  if (isNaN(current_semester) || current_semester < 1 || current_semester > 8) {
+    throw new Error('Current semester must be between 1 and 8');
+  }
+
   const res = await fetch(`${BASE}/editstudent/${id}`, {
     method: 'PUT',
     headers: {
+      'Authorization': `Bearer ${user.token}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
@@ -106,13 +129,14 @@ export async function updateStudent(
       email,
       batch_id,
       current_year,
+      current_semester, // Include current_semester
       phone,
       address,
       pan_number,
       aadhar_number,
       father_phone,
-      mother_phone
-    })
+      mother_phone,
+    }),
   });
   if (!res.ok) {
     const { message } = await res.json();
@@ -125,6 +149,10 @@ export async function updateStudent(
 export async function deleteStudent(user: { token: string | null }, id: string): Promise<void> {
   const res = await fetch(`${BASE}/deletestudent/${id}`, {
     method: 'DELETE',
+    headers: {
+      'Authorization': `Bearer ${user.token}`,
+      'Content-Type': 'application/json',
+    },
   });
   if (!res.ok) {
     const { message } = await res.json();
