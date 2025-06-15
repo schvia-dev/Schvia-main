@@ -1460,8 +1460,7 @@ router.put('/editsubject/:id', async (req, res) => {
        SET subject_code = $1,
            name = $2,
            department_id = $3,
-           credits = $4,
-           updated_at = NOW()
+           credits = $4
        WHERE id = $5
        RETURNING id, subject_code, name, department_id, credits;`,
       [subject_code, name, department_id, credits, id]
